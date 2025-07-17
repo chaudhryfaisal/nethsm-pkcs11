@@ -165,6 +165,20 @@ impl BackendError {
             operation: operation.into(),
         }
     }
+
+    /// Create an initialization error
+    pub fn initialization_error<S: Into<String>>(message: S) -> Self {
+        Self::InternalError {
+            reason: format!("Initialization error: {}", message.into()),
+        }
+    }
+
+    /// Create a not supported error
+    pub fn not_supported<S: Into<String>>(message: S) -> Self {
+        Self::OperationNotSupported {
+            operation: message.into(),
+        }
+    }
 }
 
 /// Conversion to PKCS#11 error codes
@@ -218,6 +232,10 @@ pub enum ConfigError {
     /// Invalid value
     #[error("Invalid value for {field}: {value}")]
     InvalidValue { field: String, value: String },
+
+    /// Validation failed
+    #[error("Validation failed: {message}")]
+    ValidationFailed { message: String },
 }
 
 impl From<ConfigError> for BackendError {

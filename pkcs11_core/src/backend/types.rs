@@ -282,6 +282,10 @@ pub struct KeyGenerationSpec {
     pub id: Option<Vec<u8>>,
     /// Key usage attributes
     pub usage: KeyUsage,
+    /// Mechanism type for generation
+    pub mechanism: MechanismType,
+    /// Key generation parameters
+    pub parameters: Option<KeyParameters>,
 }
 
 /// Key usage attributes
@@ -312,7 +316,7 @@ impl Default for KeyUsage {
             decrypt: false,
             derive: false,
             extractable: false,
-            sensitive: true,
+            sensitive: false,
         }
     }
 }
@@ -418,7 +422,7 @@ pub struct SignMechanism {
     /// Mechanism type
     pub mechanism_type: MechanismType,
     /// Mechanism parameters
-    pub parameters: Option<Vec<u8>>,
+    pub parameters: Option<SignParameters>,
 }
 
 /// Cryptographic mechanism for encryption
@@ -427,7 +431,7 @@ pub struct EncryptMechanism {
     /// Mechanism type
     pub mechanism_type: MechanismType,
     /// Mechanism parameters
-    pub parameters: Option<Vec<u8>>,
+    pub parameters: Option<EncryptParameters>,
 }
 
 /// Backend configuration trait
@@ -446,7 +450,7 @@ pub trait BackendConfig: Send + Sync + std::fmt::Debug {
 }
 
 /// Backend type enumeration
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum BackendType {
     /// NetHSM backend
     NetHsm,
@@ -456,15 +460,18 @@ pub enum BackendType {
     SoftHsm,
     /// PKCS#11 proxy backend
     Pkcs11Proxy,
+    /// Custom backend with name
+    Custom(String),
 }
 
 impl fmt::Display for BackendType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BackendType::NetHsm => write!(f, "nethsm"),
+            BackendType::NetHsm => write!(f, "NetHsm"),
             BackendType::Mock => write!(f, "mock"),
             BackendType::SoftHsm => write!(f, "softhsm"),
             BackendType::Pkcs11Proxy => write!(f, "pkcs11-proxy"),
+            BackendType::Custom(name) => write!(f, "Custom({})", name),
         }
     }
 }
@@ -485,5 +492,49 @@ pub enum SystemState {
     Unprovisioned,
     Operational,
     Locked,
+    Maintenance,
+    Error,
     Unknown,
+}
+
+/// Key generation parameters
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum KeyParameters {
+    /// Elliptic curve parameters
+    EllipticCurve {
+        /// Curve type
+        curve: EllipticCurve,
+    },
+    /// RSA parameters
+    Rsa {
+        /// Public exponent
+        public_exponent: Vec<u8>,
+    },
+}
+
+/// Elliptic curve types (alias for EcCurve for backward compatibility)
+pub type EllipticCurve = EcCurve;
+
+/// Signing mechanism parameters
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SignParameters {
+    /// RSA PSS parameters
+    RsaPss {
+        /// Hash algorithm
+        hash_algorithm: MechanismType,
+        /// Mask generation function
+        mgf: MechanismType,
+        /// Salt length
+        salt_length: u32,
+    },
+}
+
+/// Encryption mechanism parameters
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum EncryptParameters {
+    /// AES CBC parameters
+    AesCbc {
+        /// Initialization vector
+        iv: Vec<u8>,
+    },
 }

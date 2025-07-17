@@ -192,7 +192,7 @@ impl BackendDiscoveryManager {
                 let backend_type = discovery.backend_type();
                 let factory = discovery.create_factory();
                 
-                register_backend(backend_type, move |config| factory(config))?;
+                register_backend(backend_type.clone(), move |config| factory(config))?;
                 registered.push(backend_type);
             }
         }

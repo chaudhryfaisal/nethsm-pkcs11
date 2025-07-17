@@ -61,6 +61,7 @@ fn test_key_type_enum() {
         KeyType::Rsa => {},
         KeyType::EllipticCurve => panic!("Wrong variant"),
         KeyType::Aes => panic!("Wrong variant"),
+        KeyType::GenericSecret => panic!("Wrong variant"),
     }
 }
 
@@ -249,6 +250,7 @@ fn test_slot_info() {
         manufacturer_id: "Test Manufacturer".to_string(),
         flags: SlotFlags {
             token_present: true,
+            removable_device: false,
             hardware_slot: false,
         },
         hardware_version: Version { major: 1, minor: 0 },
@@ -272,6 +274,7 @@ fn test_token_info() {
         serial_number: "12345".to_string(),
         flags: TokenFlags {
             rng: true,
+            write_protected: false,
             token_initialized: true,
             user_pin_initialized: true,
             login_required: false,
@@ -540,14 +543,11 @@ fn test_backend_error_types() {
 
 #[test]
 fn test_config_error_types() {
-    let missing_field = ConfigError::MissingField {
-        field: "test_field".to_string(),
-    };
+    let missing_field = ConfigError::MissingField("test_field".to_string());
     
     let invalid_value = ConfigError::InvalidValue {
         field: "test_field".to_string(),
         value: "invalid".to_string(),
-        reason: "Test reason".to_string(),
     };
     
     let validation_failed = ConfigError::ValidationFailed {

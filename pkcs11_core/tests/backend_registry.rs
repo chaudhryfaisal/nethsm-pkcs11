@@ -6,7 +6,7 @@
 use pkcs11_core::backend::{
     registry::*,
     types::*,
-    error::BackendError,
+    error::{BackendError, ConfigError},
     CryptoBackend, ErasedCryptoBackend,
 };
 use std::sync::{Arc, Mutex};
@@ -28,15 +28,15 @@ impl BackendConfig for TestBackendConfig {
         BackendType::Custom("test".to_string())
     }
 
-    fn validate(&self) -> Result<(), ConfigError> {
+    fn validate(&self) -> Result<(), BackendError> {
         if self.name.is_empty() {
-            return Err(ConfigError::InvalidValue {
-                field: "name".to_string(),
-                value: self.name.clone(),
-                reason: "Name cannot be empty".to_string(),
-            });
+            return Err(BackendError::configuration_error("Name cannot be empty"));
         }
         Ok(())
+    }
+
+    fn clone_config(&self) -> Box<dyn BackendConfig> {
+        Box::new(self.clone())
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
