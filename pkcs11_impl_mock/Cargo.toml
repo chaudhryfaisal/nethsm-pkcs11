@@ -1,0 +1,46 @@
+[package]
+name = "pkcs11_impl_mock"
+version = "1.7.1"
+edition = "2021"
+license = "Apache-2.0"
+description = "Mock implementation for PKCS#11 - testing and development"
+homepage = "https://github.com/Nitrokey/nethsm-pkcs11"
+repository = "https://github.com/Nitrokey/nethsm-pkcs11"
+readme = "README.md"
+keywords = ["pkcs11", "hsm", "cryptography", "mock", "testing"]
+categories = ["cryptography", "api-bindings", "development-tools::testing"]
+
+[lib]
+name = "pkcs11_impl_mock"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Core PKCS#11 library
+pkcs11_core = { path = "../pkcs11_core", features = ["mock-backend"] }
+
+# Core dependencies from workspace
+cryptoki-sys = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+lazy_static = { workspace = true }
+thiserror = { workspace = true }
+arc-swap = { workspace = true }
+hex = { workspace = true }
+
+# Mock-specific dependencies from workspace
+uuid = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+aes = { workspace = true }
+rsa = { workspace = true }
+p256 = { workspace = true }
+
+[dev-dependencies]
+once_cell = { workspace = true }
+tempfile = { workspace = true }
+test-log = { workspace = true }
+
+[features]
+default = []

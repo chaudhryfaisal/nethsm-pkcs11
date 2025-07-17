@@ -1,21 +1,172 @@
-# PKCS#11 Module for the Nitrokey NetHSM
+# Modular PKCS#11 Architecture for NetHSM
 
 [![codecov.io][codecov-badge]][codecov-url]
 
 [codecov-badge]: https://codecov.io/gh/nitrokey/nethsm-pkcs11/branch/main/graph/badge.svg
 [codecov-url]: https://app.codecov.io/gh/nitrokey/nethsm-pkcs11/tree/main
 
-This module allows to use a [Nitrokey NetHSM](https://www.nitrokey.com/products/nethsm) as a backend for PKCS#11 operations.
+A modular PKCS#11 implementation that provides a clean abstraction layer between the PKCS#11 protocol and cryptographic backends. This architecture enables support for multiple backend implementations while maintaining full PKCS#11 C API compatibility.
+
+## Features
+
+- **Modular Architecture**: Clean separation between PKCS#11 protocol and backend implementations
+- **Multiple Backends**: Support for NetHSM, mock implementations, and custom backends
+- **Full PKCS#11 Compliance**: Complete implementation of PKCS#11 C API
+- **Thread Safety**: Safe concurrent access across multiple threads
+- **Comprehensive Testing**: Extensive test suite with mock backend for CI/CD
+- **Production Ready**: Battle-tested NetHSM integration
 
 See the [list of supported features](./features.md) for more details.
 
-## Download
+## Architecture Overview
 
-Download the latest binary from the [release page](https://github.com/Nitrokey/nethsm-pkcs11/releases).
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    PKCS#11 C API Layer                     │
+├─────────────────────────────────────────────────────────────┤
+│                    pkcs11_core Library                     │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────┐ │
+│  │   API Module    │  │  Backend Traits │  │ Common Types│ │
+│  └─────────────────┘  └─────────────────┘  └─────────────┘ │
+├─────────────────────────────────────────────────────────────┤
+│                Backend Implementations                      │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────┐ │
+│  │  NetHSM SDK     │  │   Mock Backend  │  │   Custom    │ │
+│  │  Implementation │  │                 │  │   Backend   │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Components
+
+- **[`pkcs11_core`](./pkcs11_core/)**: Core library with PKCS#11 protocol implementation and backend abstraction
+- **[`pkcs11_impl_nethsm_sdk`](./pkcs11_impl_nethsm_sdk/)**: Production NetHSM backend using the NetHSM SDK
+- **[`pkcs11_impl_mock`](./pkcs11_impl_mock/)**: Mock backend for testing and development
+
+## Quick Start
+
+### Using NetHSM Backend
+
+1. **Download the latest release**:
+   ```bash
+   wget https://github.com/Nitrokey/nethsm-pkcs11/releases/latest/download/libpkcs11_impl_nethsm_sdk.so
+   ```
+
+2. **Create configuration file** (`p11nethsm.conf`):
+   ```yaml
+   slots:
+     - label: "NetHSM"
+       instances:
+         - url: "https://nethsm.example.com/api/v1"
+       operator:
+         username: "operator"
+         password: "opPassphrase"
+   ```
+
+3. **Use with PKCS#11 applications**:
+   ```bash
+   pkcs11-tool --module ./libpkcs11_impl_nethsm_sdk.so --list-slots
+   ```
+
+### Using Mock Backend for Testing
+
+1. **Build the mock backend**:
+   ```bash
+   cargo build --release --package pkcs11_impl_mock
+   ```
+
+2. **Create test configuration**:
+   ```yaml
+   backend:
+     type: "mock"
+   mock:
+     deterministic: true
+     token_label: "Test Token"
+   ```
+
+3. **Run tests**:
+   ```bash
+   pkcs11-tool --module ./target/release/libpkcs11_impl_mock.so --list-slots
+   ```
 
 ## Documentation
 
-Follow the [documentation](https://docs.nitrokey.com/nethsm/pkcs11-setup.html) for usage instructions.
+- **[API Documentation](./docs/API.md)**: Comprehensive API reference and backend abstraction layer
+- **[Configuration Guide](./docs/CONFIGURATION.md)**: Complete configuration options for all backends
+- **[Development Guide](./docs/DEVELOPMENT.md)**: Development setup, testing, and contribution guidelines
+- **[Examples](./examples/)**: Practical examples and integration guides
+- **[Migration Guide](./examples/migration/)**: Migrating from the monolithic implementation
+
+For NetHSM-specific setup, see the [official documentation](https://docs.nitrokey.com/nethsm/pkcs11-setup.html).
+
+## Backends
+
+### NetHSM Backend (`pkcs11_impl_nethsm_sdk`)
+
+Production-ready backend for [Nitrokey NetHSM](https://www.nitrokey.com/products/nethsm) devices.
+
+**Features:**
+- Full NetHSM SDK integration
+- High availability with multiple instances
+- Hardware-backed cryptographic operations
+- TLS certificate validation
+- Automatic failover and retry logic
+
+**Supported Operations:**
+- RSA signing and encryption (PKCS#1, PSS, OAEP)
+- ECDSA signing (P-256, P-384, P-521)
+- EdDSA signing (Ed25519)
+- AES encryption/decryption (CBC)
+- Key generation and management
+- Certificate management
+
+### Mock Backend (`pkcs11_impl_mock`)
+
+Comprehensive testing backend for development and CI/CD.
+
+**Features:**
+- Deterministic behavior for reproducible tests
+- Configurable error injection
+- Operation delay simulation
+- In-memory storage
+- Complete PKCS#11 operation coverage
+
+**Use Cases:**
+- Unit and integration testing
+- CI/CD pipelines
+- Development without hardware
+- Performance testing
+- Error handling validation
+
+## Installation
+
+### From Releases
+
+Download the latest binary from the [release page](https://github.com/Nitrokey/nethsm-pkcs11/releases):
+
+```bash
+# NetHSM backend
+wget https://github.com/Nitrokey/nethsm-pkcs11/releases/latest/download/libpkcs11_impl_nethsm_sdk.so
+
+# Mock backend
+wget https://github.com/Nitrokey/nethsm-pkcs11/releases/latest/download/libpkcs11_impl_mock.so
+```
+
+### From Source
+
+```bash
+git clone https://github.com/Nitrokey/nethsm-pkcs11.git
+cd nethsm-pkcs11
+
+# Build NetHSM backend
+cargo build --release --package pkcs11_impl_nethsm_sdk
+
+# Build mock backend
+cargo build --release --package pkcs11_impl_mock
+
+# Build all backends
+cargo build --release
+```
 
 ## Debug Options
 

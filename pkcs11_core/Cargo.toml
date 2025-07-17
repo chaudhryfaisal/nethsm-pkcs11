@@ -1,0 +1,76 @@
+[package]
+name = "pkcs11_core"
+version = "1.7.1"
+edition = "2021"
+license = "Apache-2.0"
+description = "Core PKCS#11 library - modular architecture"
+homepage = "https://github.com/Nitrokey/nethsm-pkcs11"
+repository = "https://github.com/Nitrokey/nethsm-pkcs11"
+readme = "README.md"
+keywords = ["pkcs11", "hsm", "cryptography", "core"]
+categories = ["cryptography", "api-bindings"]
+
+[lib]
+name = "pkcs11_core"
+crate-type = ["lib"]
+
+[dependencies]
+# Core PKCS#11 dependencies
+cryptoki-sys = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+serde_json = { workspace = true }
+lazy_static = { workspace = true }
+thiserror = { workspace = true }
+arc-swap = { workspace = true }
+hex = { workspace = true }
+
+# Cryptographic dependencies (core only)
+sha2 = { workspace = true }
+sha1 = { workspace = true }
+digest = { workspace = true }
+md-5 = { workspace = true }
+hex-literal = { workspace = true }
+base64ct = { workspace = true }
+der = { workspace = true }
+pem-rfc7468 = { workspace = true }
+x509-cert = { workspace = true }
+
+# NetHSM-specific dependencies (conditional)
+nethsm-sdk-rs = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+rustls-native-certs = { workspace = true, optional = true }
+rustls-pki-types = { workspace = true, optional = true }
+ureq = { workspace = true, optional = true }
+socket2 = { workspace = true, optional = true }
+rayon = { workspace = true, optional = true }
+syslog = { workspace = true, optional = true }
+
+# Config file support
+config_file = { path = "config_file" }
+
+[dev-dependencies]
+once_cell = { workspace = true }
+pkcs11 = { workspace = true }
+tempfile = { workspace = true }
+test-log = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+
+[features]
+pkcs11-full-tests = []
+# Backend implementations can be enabled via features
+nethsm-backend = [
+    "dep:nethsm-sdk-rs",
+    "dep:rustls",
+    "dep:rustls-native-certs",
+    "dep:rustls-pki-types",
+    "dep:ureq",
+    "dep:socket2",
+    "dep:rayon",
+    "dep:syslog"
+]
+mock-backend = []
+default = []

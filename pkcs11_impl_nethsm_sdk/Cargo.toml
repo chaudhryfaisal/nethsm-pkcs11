@@ -1,0 +1,65 @@
+[package]
+name = "pkcs11_impl_nethsm_sdk"
+version = "1.7.1"
+edition = "2021"
+license = "Apache-2.0"
+description = "NetHSM SDK implementation for PKCS#11"
+homepage = "https://github.com/Nitrokey/nethsm-pkcs11"
+repository = "https://github.com/Nitrokey/nethsm-pkcs11"
+readme = "README.md"
+keywords = ["pkcs11", "hsm", "cryptography", "nitrokey", "nethsm"]
+categories = ["cryptography", "api-bindings"]
+
+[lib]
+name = "pkcs11_impl_nethsm_sdk"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Core PKCS#11 library
+pkcs11_core = { path = "../pkcs11_core", features = ["nethsm-backend"] }
+
+# Core dependencies from workspace
+cryptoki-sys = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+serde_json = { workspace = true }
+lazy_static = { workspace = true }
+thiserror = { workspace = true }
+arc-swap = { workspace = true }
+hex = { workspace = true }
+hex-literal = { workspace = true }
+
+# Cryptographic dependencies from workspace
+sha2 = { workspace = true }
+sha1 = { workspace = true }
+digest = { workspace = true }
+md-5 = { workspace = true }
+base64ct = { workspace = true }
+der = { workspace = true }
+pem-rfc7468 = { workspace = true }
+x509-cert = { workspace = true }
+
+# NetHSM-specific dependencies from workspace
+nethsm-sdk-rs = { workspace = true }
+rustls = { workspace = true }
+rustls-native-certs = { workspace = true }
+rustls-pki-types = { workspace = true }
+ureq = { workspace = true }
+socket2 = { workspace = true }
+rayon = { workspace = true }
+syslog = { workspace = true }
+once_cell = { workspace = true }
+
+[dev-dependencies]
+once_cell = { workspace = true }
+pkcs11 = { workspace = true }
+tempfile = { workspace = true }
+test-log = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+
+[features]
+pkcs11-full-tests = []
+default = []

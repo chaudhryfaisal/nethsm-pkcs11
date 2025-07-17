@@ -1,0 +1,80 @@
+# Mock Backend Configuration for Basic Usage Examples
+backend:
+  type: "mock"
+
+mock:
+  # Basic settings
+  deterministic: true
+  random_seed: 42
+  token_label: "Example Mock Token"
+  manufacturer_id: "Example Manufacturer"
+  model: "Mock HSM v1.0"
+  serial_number: "MOCK-001"
+  firmware_version: "1.0.0"
+  
+  # Capacity settings
+  max_sessions: 10
+  max_objects: 100
+  
+  # Authentication
+  require_auth: true
+  default_pin: "123456"
+  
+  # Logging
+  verbose_logging: true
+  
+  # No error injection for basic examples
+  error_injection:
+    enabled: false
+  
+  # No operation delays for basic examples
+  operation_delays: {}
+  
+  # Mechanism configuration
+  mechanisms:
+    CKM_RSA_PKCS:
+      enabled: true
+      supports_signing: true
+      supports_verification: true
+      supports_encryption: true
+      supports_decryption: true
+      supports_key_generation: true
+      min_key_size: 1024
+      max_key_size: 4096
+      default_key_size: 2048
+    
+    CKM_RSA_PKCS_PSS:
+      enabled: true
+      supports_signing: true
+      supports_verification: true
+      min_key_size: 1024
+      max_key_size: 4096
+    
+    CKM_ECDSA:
+      enabled: true
+      supports_signing: true
+      supports_verification: true
+      supports_key_generation: true
+      supported_curves:
+        - "P-256"
+        - "P-384"
+        - "P-521"
+    
+    CKM_AES_CBC:
+      enabled: true
+      supports_encryption: true
+      supports_decryption: true
+      supports_key_generation: true
+      supported_key_sizes:
+        - 128
+        - 192
+        - 256
+    
+    CKM_SHA256:
+      enabled: true
+    
+    CKM_SHA384:
+      enabled: true
+    
+    CKM_SHA512:
+      enabled: true

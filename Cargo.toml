@@ -1,9 +1,67 @@
 [workspace]
 resolver = "2"
 members = [
-  "pkcs11",
-  "pkcs11/config_file",
+  "pkcs11_core",
+  "pkcs11_core/config_file",
+  "pkcs11_impl_nethsm_sdk",
+  "pkcs11_impl_mock",
 ]
+
+[workspace.dependencies]
+# Core PKCS#11 dependencies
+cryptoki-sys = "0.4.0"
+log = "0.4.19"
+env_logger = { default-features = false, version = "0.11.7", features = ["auto-color", "humantime"] }
+serde = { version = "1", features = ["derive"], default-features = false }
+serde_yaml = "0.9.22"
+serde_json = { default-features = false, version = "1.0.64" }
+lazy_static = "1.4.0"
+thiserror = "2.0.12"
+arc-swap = "1.7.1"
+hex = "0.4"
+
+# Cryptographic dependencies
+sha2 = { default-features = false, version = "0.10" }
+sha1 = { default-features = false, version = "0.10" }
+digest = { default-features = false, version = "0.10" }
+md-5 = "0.10.6"
+hex-literal = "1.0.0"
+base64ct = { version = "1.6", default-features = false }
+der = { version = "0.7", default-features = false }
+pem-rfc7468 = "0.7"
+x509-cert = { features = ["pem"], default-features = false, version = "0.2" }
+
+# NetHSM-specific dependencies (only for nethsm implementation)
+nethsm-sdk-rs = { version = "2.0" }
+rustls = { version = "0.23", default-features = false }
+rustls-native-certs = "0.8"
+rustls-pki-types = "1.11.0"
+ureq = { version = "=3.0.12", default-features = false }
+socket2 = { version = "0.5.8", features = ["all"] }
+rayon = "1.8.0"
+syslog = "6.1.1"
+
+# Mock implementation dependencies
+uuid = { version = "1.0", features = ["v4"] }
+rand = "0.8"
+aes = "0.8"
+rsa = "0.9"
+p256 = "0.13"
+
+# Development dependencies
+once_cell = "1.19.0"
+pkcs11 = "0.5.0"
+tempfile = "3.12.0"
+test-log = "0.2.16"
+time = "0.3.36"
+tokio = { version = "1", default-features = false, features = ["net", "sync", "rt", "io-util", "time"] }
+
+# Config file dependencies
+merge = { features = ["derive", "std"], default-features = false, version = "0.2.0" }
+
+[workspace.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [profile.release]
 opt-level = 'z'     # Optimize for size
@@ -11,3 +69,7 @@ lto = true          # Enable link-time optimization
 codegen-units = 1   # Reduce number of codegen units to increase optimizations
 panic = 'abort'     # Abort on panic
 strip = true        # Strip symbols from binary
+
+[profile.dev]
+opt-level = 0
+debug = true
