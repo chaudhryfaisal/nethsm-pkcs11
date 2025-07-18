@@ -58,4 +58,5 @@ tokio = { workspace = true }
 pkcs11-full-tests = []
 # Backend implementations can be enabled via features
 mock-backend = []
+nethsm-backend = []
 default = []

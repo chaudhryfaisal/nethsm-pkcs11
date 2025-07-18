@@ -173,7 +173,8 @@ impl CryptoBackend for NetHsmBackend {
             reason: e.to_string(),
         })?;
         
-        let mut backend = Self::new(config)?;
+        let device = Self::config_to_device(config)?;
+        let mut backend = Self::new(device)?;
         backend.initialized = true;
         Ok(backend)
     }
@@ -195,7 +196,7 @@ impl CryptoBackend for NetHsmBackend {
     }
 
     fn get_slot_info(&self, slot_id: SlotId) -> Result<SlotInfo, Self::Error> {
-        let _url = self.get_slot_url(slot_id)?;
+        let _slot = self.get_slot(slot_id)?;
 
         // For now, return basic slot info
         // In a full implementation, this would query the NetHSM device
@@ -213,7 +214,7 @@ impl CryptoBackend for NetHsmBackend {
     }
 
     fn get_token_info(&self, slot_id: SlotId) -> Result<TokenInfo, Self::Error> {
-        let _url = self.get_slot_url(slot_id)?;
+        let _slot = self.get_slot(slot_id)?;
 
         // For now, return basic token info
         // In a full implementation, this would query the NetHSM device
@@ -234,7 +235,7 @@ impl CryptoBackend for NetHsmBackend {
     }
 
     fn get_device_info(&self, slot_id: SlotId) -> Result<DeviceInfo, Self::Error> {
-        let _url = self.get_slot_url(slot_id)?;
+        let _slot = self.get_slot(slot_id)?;
 
         // For now, return basic device info
         // In a full implementation, this would query the NetHSM device
@@ -248,7 +249,7 @@ impl CryptoBackend for NetHsmBackend {
     }
 
     fn get_system_state(&self, slot_id: SlotId) -> Result<SystemState, Self::Error> {
-        let _url = self.get_slot_url(slot_id)?;
+        let _slot = self.get_slot(slot_id)?;
 
         // For now, return operational state
         // In a full implementation, this would query the NetHSM device
@@ -563,7 +564,8 @@ mod tests {
     #[test]
     fn test_backend_creation() {
         let config = create_test_config();
-        let backend = NetHsmBackend::new(config);
+        let device = NetHsmBackend::config_to_device(config).unwrap();
+        let backend = NetHsmBackend::new(device);
         assert!(backend.is_ok());
     }
 

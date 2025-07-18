@@ -518,7 +518,7 @@ impl MockKeyMaterial {
                     private_scalar: Some(private_scalar),
                 }
             }
-            KeyType::Aes | KeyType::GenericSecret => {
+            KeyType::Aes | KeyType::GenericSecret | KeyType::Generic => {
                 let key_data_size = (key_size / 8) as usize;
                 let mut key_data = vec![0u8; key_data_size];
                 rng.fill(&mut key_data[..]);
@@ -526,6 +526,95 @@ impl MockKeyMaterial {
                 Self::Symmetric {
                     key_size,
                     key_data,
+                }
+            }
+            KeyType::EcP224 => {
+                let curve = EcCurve::P256; // Use P256 as fallback for P224
+                let point_size = 65; // Uncompressed point: 1 + 32 + 32
+                let scalar_size = 32;
+
+                let mut public_point = vec![0u8; point_size];
+                let mut private_scalar = vec![0u8; scalar_size];
+                
+                rng.fill(&mut public_point[..]);
+                rng.fill(&mut private_scalar[..]);
+                public_point[0] = 0x04; // Uncompressed point indicator
+
+                Self::EllipticCurve {
+                    curve,
+                    public_point,
+                    private_scalar: Some(private_scalar),
+                }
+            }
+            KeyType::EcP256 => {
+                let curve = EcCurve::P256;
+                let point_size = 65; // Uncompressed point: 1 + 32 + 32
+                let scalar_size = 32;
+
+                let mut public_point = vec![0u8; point_size];
+                let mut private_scalar = vec![0u8; scalar_size];
+                
+                rng.fill(&mut public_point[..]);
+                rng.fill(&mut private_scalar[..]);
+                public_point[0] = 0x04; // Uncompressed point indicator
+
+                Self::EllipticCurve {
+                    curve,
+                    public_point,
+                    private_scalar: Some(private_scalar),
+                }
+            }
+            KeyType::EcP384 => {
+                let curve = EcCurve::P384;
+                let point_size = 97; // Uncompressed point: 1 + 48 + 48
+                let scalar_size = 48;
+
+                let mut public_point = vec![0u8; point_size];
+                let mut private_scalar = vec![0u8; scalar_size];
+                
+                rng.fill(&mut public_point[..]);
+                rng.fill(&mut private_scalar[..]);
+                public_point[0] = 0x04; // Uncompressed point indicator
+
+                Self::EllipticCurve {
+                    curve,
+                    public_point,
+                    private_scalar: Some(private_scalar),
+                }
+            }
+            KeyType::EcP521 => {
+                let curve = EcCurve::P521;
+                let point_size = 133; // Uncompressed point: 1 + 66 + 66
+                let scalar_size = 66;
+
+                let mut public_point = vec![0u8; point_size];
+                let mut private_scalar = vec![0u8; scalar_size];
+                
+                rng.fill(&mut public_point[..]);
+                rng.fill(&mut private_scalar[..]);
+                public_point[0] = 0x04; // Uncompressed point indicator
+
+                Self::EllipticCurve {
+                    curve,
+                    public_point,
+                    private_scalar: Some(private_scalar),
+                }
+            }
+            KeyType::Curve25519 => {
+                let curve = EcCurve::Ed25519;
+                let point_size = 32; // Compressed point
+                let scalar_size = 32;
+
+                let mut public_point = vec![0u8; point_size];
+                let mut private_scalar = vec![0u8; scalar_size];
+                
+                rng.fill(&mut public_point[..]);
+                rng.fill(&mut private_scalar[..]);
+
+                Self::EllipticCurve {
+                    curve,
+                    public_point,
+                    private_scalar: Some(private_scalar),
                 }
             }
         }

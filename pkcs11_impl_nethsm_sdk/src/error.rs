@@ -60,6 +60,10 @@ pub enum NetHsmError {
     #[error("Invalid mechanism: {mechanism}")]
     InvalidMechanism { mechanism: String },
 
+    /// Unsupported mechanism
+    #[error("Unsupported mechanism: {0}")]
+    UnsupportedMechanism(String),
+
     /// Session error
     #[error("Session error: {reason}")]
     SessionError { reason: String },
@@ -189,6 +193,9 @@ impl From<NetHsmError> for BackendError {
             NetHsmError::InvalidMechanism { mechanism } => {
                 BackendError::MechanismNotSupported { mechanism }
             }
+            NetHsmError::UnsupportedMechanism(mechanism) => {
+                BackendError::MechanismNotSupported { mechanism }
+            }
             NetHsmError::SessionError { reason } => BackendError::InvalidSession {
                 session_id: reason,
             },
@@ -208,6 +215,23 @@ pub fn convert_api_error<T>(
     result.map_err(|err| {
         log::error!("NetHSM API error in {}: {:?}", operation, err);
         NetHsmError::ApiError(err)
+    })
+}
+
+/// Generic helper function to convert any NetHSM API error to our error type
+pub fn convert_nethsm_result<T, E>(
+    result: Result<nethsm_sdk_rs::apis::ResponseContent<T>, nethsm_sdk_rs::apis::Error<E>>,
+    operation: &str,
+) -> NetHsmResult<nethsm_sdk_rs::apis::ResponseContent<T>>
+where
+    E: std::fmt::Debug,
+{
+    result.map_err(|err| {
+        log::error!("NetHSM API error in {}: {:?}", operation, err);
+        // Create a simplified error for now
+        NetHsmError::InternalError {
+            reason: format!("NetHSM API error in {}: {:?}", operation, err),
+        }
     })
 }
 

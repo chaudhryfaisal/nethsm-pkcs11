@@ -83,6 +83,13 @@ pub struct InstanceData {
     pub state: Arc<std::sync::RwLock<InstanceState>>,
 }
 
+impl InstanceData {
+    /// Get the NetHSM SDK configuration
+    pub fn config(&self) -> &nethsm_sdk_rs::apis::configuration::Configuration {
+        &self.config
+    }
+}
+
 /// Instance state for connection management
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum InstanceState {
