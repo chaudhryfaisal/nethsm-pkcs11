@@ -47,22 +47,39 @@ pub extern "C" fn C_Initialize(pInitArgs: CK_VOID_PTR) -> CK_RV {
     trace!("C_Initialize() called with args: {pInitArgs:?}");
 
     let res = crate::config::initialization::initialize();
-    let device = match res {
-        Ok(device) => {
+    match res {
+        Ok(()) => {
+            // Create a mock device for now since initialization no longer returns a device
+            let device = crate::backend::Device {
+                info: crate::backend::DeviceInfo {
+                    product: "NetHSM PKCS#11".to_string(),
+                    vendor: "Nitrokey".to_string(),
+                    device_id: Some("core".to_string()),
+                    hardware_version: Some("1.0".to_string()),
+                    software_version: Some("1.0".to_string()),
+                },
+                state: crate::backend::SystemState::Operational,
+                slots: Vec::new(),
+                config: crate::backend::DeviceConfig {
+                    label: "NetHSM PKCS#11".to_string(),
+                    max_sessions: 1024,
+                    mechanisms: Vec::new(),
+                    enable_set_attribute_value: false,
+                },
+            };
             let arced = Arc::new(device);
             DEVICE.store(Some(arced.clone()));
-            arced
+            
+            // we force the initialization of the lazy static here
+            if arced.slots.is_empty() {
+                debug!("No slots configured");
+            }
         }
         Err(err) => {
             error!("NetHSM PKCS#11: Failed to initialize configuration: {err}");
             return cryptoki_sys::CKR_FUNCTION_FAILED;
         }
     };
-
-    // we force the initialization of the lazy static here
-    if device.slots.is_empty() {
-        debug!("No slots configured");
-    }
 
     if defs::CRYPTOKI_VERSION.major == 2
         && defs::CRYPTOKI_VERSION.minor == 40

@@ -165,19 +165,14 @@ struct KeyData {
 }
 
 fn configure_rsa(key_data: &PublicKey) -> Result<KeyData, Error> {
-    let key_data = key_data.key_material.get_public_key()
-        .ok_or(Error::KeyField("public".to_string()))?;
-
-    let modulus = key_data
-        .modulus
-        .as_ref()
-        .ok_or(Error::KeyField("modulus".to_string()))?;
-    let public_exponent = key_data
-        .public_exponent
-        .as_ref()
-        .ok_or(Error::KeyField("public_exponent".to_string()))?;
-    let modulus = Base64::decode_vec(modulus)?;
-    let public_exponent = Base64::decode_vec(public_exponent)?;
+    let (modulus, public_exponent) = match &key_data.key_material {
+        crate::backend::types::KeyMaterial::Rsa { modulus, public_exponent, .. } => {
+            (modulus, public_exponent)
+        }
+        _ => return Err(Error::KeyField("Expected RSA key material".to_string())),
+    };
+    let modulus = modulus.clone();
+    let public_exponent = public_exponent.clone();
 
     let mut attrs = HashMap::new();
 
@@ -204,17 +199,18 @@ fn configure_rsa(key_data: &PublicKey) -> Result<KeyData, Error> {
 }
 
 fn configure_ec(key_data: &PublicKey) -> Result<KeyData, Error> {
-    let ec_points = key_data.key_material.get_public_key()
-        .ok_or(Error::KeyField("public".to_string()))?
-        .data
-        .as_ref()
-        .ok_or(Error::KeyField("data".to_string()))?;
+    let ec_points = match &key_data.key_material {
+        crate::backend::types::KeyMaterial::EllipticCurve { public_point, .. } => {
+            public_point
+        }
+        _ => return Err(Error::KeyField("Expected EC key material".to_string())),
+    };
 
     let size = key_size(&key_data.key_type).ok_or(Error::KeyField("type".to_string()))?;
 
     trace!("EC key data: {ec_points:?}");
 
-    let mut ec_point_bytes = Base64::decode_vec(ec_points)?;
+    let mut ec_point_bytes = ec_points.clone();
 
     trace!("EC key data bytes length : {}", ec_point_bytes.len());
 
