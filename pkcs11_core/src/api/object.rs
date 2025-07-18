@@ -241,7 +241,7 @@ pub extern "C" fn C_SetAttributeValue(
     };
 
     // if the hack is enabled, we update the key alias map
-    if device.enable_set_attribute_value {
+    if device.config.enable_set_attribute_value {
         read_session!(hSession, session);
 
         let object = match session.get_object(hObject) {

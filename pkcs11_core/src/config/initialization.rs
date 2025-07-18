@@ -6,25 +6,14 @@ use std::{
 };
 
 use crate::{
-    backend::{registry::{create_backend, initialize_builtin_backends}, BackendConfig, BackendType, SyncBackendWrapper, nethsm::NetHsmBackendConfig},
-    config::device::{create_ureq_connector, create_ureq_resolver, InstanceData},
+    backend::{registry::{create_backend}, BackendConfig, SyncBackendWrapper},
     data::BACKEND,
-    ureq::{rustls_connector::RustlsConnector, tcp_connector::TcpConnector},
 };
 
 use super::{
-    config_file::{config_files, ConfigError, SlotConfig},
-    device::{Device, Slot},
+    config_file::{config_files, ConfigError},
 };
-use arc_swap::ArcSwap;
-use log::{debug, error, info, trace};
-use nethsm_sdk_rs::ureq;
-use rustls::{
-    client::danger::ServerCertVerifier,
-    crypto::{verify_tls12_signature, verify_tls13_signature, CryptoProvider},
-};
-use sha2::Digest;
-use ureq::tls::{TlsConfig, TlsProvider::Rustls};
+use log::{error, info};
 
 const DEFAULT_USER_AGENT: &str = concat!("pkcs11-rs/", env!("CARGO_PKG_VERSION"));
 
@@ -45,7 +34,7 @@ pub enum InitializationError {
 
 pub fn initialize_with_configs(
     configs: Result<Vec<(Vec<u8>, PathBuf)>, ConfigError>,
-) -> Result<Device, InitializationError> {
+) -> Result<(), InitializationError> {
     // Use a closure called immediately so that `?` can be used
     let config_res = (|| {
         let configs_files = configs.map_err(InitializationError::Config)?;
@@ -62,331 +51,23 @@ pub fn initialize_with_configs(
     let (config, _) = config_res?;
 
     info!("Loaded configuration with {} slots", config.slots.len());
-    // initialize the clients
-    let mut slots = vec![];
-    for slot in config.slots.iter() {
-        slots.push(Arc::new(slot_from_config(slot)?));
-    }
-    let device = Device {
-        slots,
-        enable_set_attribute_value: config.enable_set_attribute_value,
-    };
 
-    // Initialize built-in backends
-    initialize_builtin_backends()
+    // Initialize built-in backends (now handled by individual backend crates)
+    crate::backend::registry::initialize_builtin_backends()
         .map_err(InitializationError::Backend)?;
 
-    // Initialize the backend based on configuration
-    let backend_type = config.backend
-        .as_ref()
-        .map(|b| b.backend_type)
-        .unwrap_or_default(); // Default to NetHSM for backward compatibility
+    // Backend initialization is now handled by specific backend implementations
+    // The core library no longer directly creates backend instances
+    info!("Core initialization complete. Backend registration handled by implementation crates.");
 
-    let backend_config: Box<dyn BackendConfig> = match backend_type {
-        crate::config::config_file::BackendType::NetHsm => {
-            Box::new(NetHsmBackendConfig {
-                device: device.clone(),
-            })
-        }
-        crate::config::config_file::BackendType::Mock => {
-            // For now, we'll use NetHSM config as a placeholder
-            // This will be replaced when mock backend is implemented
-            Box::new(NetHsmBackendConfig {
-                device: device.clone(),
-            })
-        }
-        _ => {
-            return Err(InitializationError::Backend(
-                crate::backend::BackendError::configuration_error(
-                    format!("Unsupported backend type: {}", backend_type)
-                )
-            ));
-        }
-    };
-
-    // Create the backend instance
-    let backend = create_backend(backend_config.as_ref())
-        .map_err(InitializationError::Backend)?;
-    
-    // Store the backend globally
-    BACKEND.store(Some(std::sync::Arc::new(std::sync::Mutex::new(SyncBackendWrapper::new(backend)))));
-
-    Ok(device)
+    Ok(())
 }
 
-pub fn initialize() -> Result<Device, InitializationError> {
-    rustls::crypto::ring::default_provider()
-        .install_default()
-        .ok();
+pub fn initialize() -> Result<(), InitializationError> {
     initialize_with_configs(config_files())
 }
 
-#[derive(Debug)]
-struct DangerIgnoreVerifier;
-
-impl ServerCertVerifier for DangerIgnoreVerifier {
-    fn verify_server_cert(
-        &self,
-        _end_entity: &rustls::pki_types::CertificateDer<'_>,
-        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
-        _server_name: &rustls::pki_types::ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: rustls::pki_types::UnixTime,
-    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::danger::ServerCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        message: &[u8],
-        cert: &rustls::pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        let default_provider = CryptoProvider::get_default().unwrap();
-        verify_tls12_signature(
-            message,
-            cert,
-            dss,
-            &default_provider.signature_verification_algorithms,
-        )
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        message: &[u8],
-        cert: &rustls::pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        let default_provider = CryptoProvider::get_default().unwrap();
-        verify_tls13_signature(
-            message,
-            cert,
-            dss,
-            &default_provider.signature_verification_algorithms,
-        )
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        let default_provider = CryptoProvider::get_default().unwrap();
-
-        default_provider
-            .signature_verification_algorithms
-            .supported_schemes()
-    }
-}
-
-#[derive(Debug)]
-struct FingerprintVerifier {
-    fingerprints: Vec<Vec<u8>>,
-}
-
-impl ServerCertVerifier for FingerprintVerifier {
-    fn verify_server_cert(
-        &self,
-        end_entity: &rustls::pki_types::CertificateDer<'_>,
-        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
-        _server_name: &rustls::pki_types::ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: rustls::pki_types::UnixTime,
-    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        let mut hasher = sha2::Sha256::new();
-        hasher.update(end_entity.as_ref());
-        let result = hasher.finalize();
-        for fingerprint in &self.fingerprints {
-            if fingerprint == &*result {
-                trace!("Certificate fingerprint matches");
-                return Ok(rustls::client::danger::ServerCertVerified::assertion());
-            }
-        }
-        Err(rustls::Error::General(
-            "Could not verify certificate fingerprint".to_string(),
-        ))
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        message: &[u8],
-        cert: &rustls::pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        let default_provider = CryptoProvider::get_default().unwrap();
-        verify_tls12_signature(
-            message,
-            cert,
-            dss,
-            &default_provider.signature_verification_algorithms,
-        )
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        message: &[u8],
-        cert: &rustls::pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        let default_provider = CryptoProvider::get_default().unwrap();
-        verify_tls13_signature(
-            message,
-            cert,
-            dss,
-            &default_provider.signature_verification_algorithms,
-        )
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        let default_provider = CryptoProvider::get_default().unwrap();
-
-        default_provider
-            .signature_verification_algorithms
-            .supported_schemes()
-    }
-}
-
-fn slot_from_config(slot: &SlotConfig) -> Result<Slot, InitializationError> {
-    let default_user = slot
-        .operator
-        .as_ref()
-        .or(slot.administrator.as_ref())
-        .ok_or(InitializationError::NoUser(slot.label.clone()))?;
-
-    info!(
-        "Slot with {} instances, timeout: {:?}, retries: {:?}",
-        slot.instances.len(),
-        slot.timeout_seconds,
-        slot.retries
-    );
-    let mut instances = Vec::new();
-    for instance in &slot.instances {
-        let tls_conf = rustls::ClientConfig::builder();
-
-        let tls_conf = if instance.danger_insecure_cert {
-            tls_conf
-                .dangerous()
-                .with_custom_certificate_verifier(Arc::new(DangerIgnoreVerifier))
-                .with_no_client_auth()
-        } else if !instance.sha256_fingerprints.is_empty() {
-            let fingerprints = instance
-                .sha256_fingerprints
-                .iter()
-                .map(|f| f.value.clone())
-                .collect();
-            tls_conf
-                .dangerous()
-                .with_custom_certificate_verifier(Arc::new(FingerprintVerifier { fingerprints }))
-                .with_no_client_auth()
-        } else {
-            let mut roots = rustls::RootCertStore::empty();
-            let native_certs = rustls_native_certs::load_native_certs();
-            if !native_certs.errors.is_empty() {
-                error!(
-                    "Failed to load certificates: {}",
-                    native_certs
-                        .errors
-                        .iter()
-                        .map(|e| e.to_string())
-                        .collect::<String>()
-                );
-                return Err(InitializationError::NoCerts);
-            }
-
-            let (added, failed) = roots.add_parsable_certificates(native_certs.certs);
-            // panic!("{:?}", (added, failed));
-            debug!("Added {added} certifcates and failed to parse {failed} certificates");
-
-            if added == 0 {
-                error!("Added no native certificates");
-                return Err(InitializationError::NoCerts);
-            }
-
-            tls_conf.with_root_certificates(roots).with_no_client_auth()
-        };
-
-        info!(
-            "Instance configured with: max_idle_connection: {:?}",
-            instance.max_idle_connections
-        );
-
-        let max_idle_connections = instance
-            .max_idle_connections
-            .or_else(|| available_parallelism().ok().map(Into::into))
-            .unwrap_or(100);
-
-        // 100 idle connections is the default
-        // By default there is 1 idle connection per host, but we are only connecting to 1 host.
-        // So we need to allow the connection pool to scale to match the number of threads
-        let mut builder = ureq::Agent::config_builder()
-            .tls_config(TlsConfig::builder().provider(Rustls).build())
-            .max_idle_connections(max_idle_connections)
-            .max_idle_connections_per_host(max_idle_connections);
-
-        if let Some(t) = slot.timeout_seconds {
-            builder = builder.timeout_global(Some(Duration::from_secs(t)));
-        }
-
-        let mut tcp_keepalive_time = None;
-        let mut tcp_keepalive_retries = None;
-        let mut tcp_keepalive_interval = None;
-        if let Some(keepalive) = slot.tcp_keepalive {
-            tcp_keepalive_time = Some(Duration::from_secs(keepalive.time_seconds));
-            tcp_keepalive_interval = Some(Duration::from_secs(keepalive.interval_seconds));
-            tcp_keepalive_retries = Some(keepalive.retries);
-        }
-
-        if let Some(max_idle_duration) = slot.connections_max_idle_duration {
-            builder = builder.max_idle_age(Duration::from_secs(max_idle_duration));
-        } else {
-            builder = builder.max_idle_age(Duration::MAX)
-        }
-
-        let tcp_connector = TcpConnector {
-            tcp_keepalive_time,
-            tcp_keepalive_retries,
-            tcp_keepalive_interval,
-        };
-        let rustls_connector = RustlsConnector {
-            config: tls_conf.into(),
-        };
-
-        let agent_config = builder.build();
-        let agent = ureq::Agent::with_parts(
-            agent_config.clone(),
-            create_ureq_connector(tcp_connector.clone(), rustls_connector.clone()),
-            create_ureq_resolver(),
-        );
-        let api_config = nethsm_sdk_rs::apis::configuration::Configuration {
-            client: agent.clone(),
-            base_path: instance.url.clone(),
-            basic_auth: Some((default_user.username.clone(), default_user.password.clone())),
-            user_agent: Some(DEFAULT_USER_AGENT.to_string()),
-            ..Default::default()
-        };
-
-        instances.push(InstanceData::new(
-            Arc::new(ArcSwap::new(Arc::new(agent))),
-            agent_config,
-            tcp_connector,
-            rustls_connector,
-            api_config,
-            Default::default(),
-        ));
-    }
-    if instances.is_empty() {
-        error!("Slot without any instance configured");
-        return Err(InitializationError::NoInstance);
-    }
-
-    Ok(Slot {
-        _description: slot.description.clone(),
-        label: slot.label.clone(),
-        instances,
-        administrator: slot.administrator.clone(),
-        operator: slot.operator.clone(),
-        retries: slot.retries,
-        db: Arc::new((Mutex::new(crate::backend::db::Db::new()), Condvar::new())),
-        instance_balancer: Default::default(),
-        certificate_format: slot.certificate_format,
-    })
-}
+// NetHSM-specific TLS and slot configuration moved to pkcs11_impl_nethsm_sdk
 
 #[cfg(test)]
 mod tests {

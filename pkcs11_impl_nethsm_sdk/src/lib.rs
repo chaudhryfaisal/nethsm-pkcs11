@@ -41,6 +41,8 @@ pub use pkcs11_core::{
 pub mod backend;
 pub mod config;
 pub mod error;
+pub mod network;
+pub mod operations;
 
 use backend::NetHsmBackend;
 use pkcs11_core::backend::CryptoBackend;
@@ -55,12 +57,35 @@ fn initialize_nethsm_backend() -> Result<Arc<Mutex<SyncBackendWrapper>>, Box<dyn
     // In a full implementation, this would read from configuration files
     let config = NetHsmConfig::new(vec!["https://localhost:8443/api/v1".to_string()]);
     
+    // Convert config to device configuration
+    let device = backend::NetHsmBackend::config_to_device(config)
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+    
     // Initialize the backend
-    let backend = NetHsmBackend::initialize(config)?;
+    let backend = backend::NetHsmBackend::new(device)?;
     
     // Wrap in sync wrapper and return
     let sync_backend = SyncBackendWrapper::new(Box::new(backend));
     Ok(Arc::new(Mutex::new(sync_backend)))
+}
+
+/// Register the NetHSM backend with the core registry
+pub fn register_nethsm_backend() -> Result<(), pkcs11_core::backend::error::BackendError> {
+    use pkcs11_core::backend::registry::register_backend;
+    use pkcs11_core::backend::types::BackendType;
+    
+    register_backend(BackendType::NetHsm, |config| {
+        let nethsm_config = config
+            .as_any()
+            .downcast_ref::<config::NetHsmConfig>()
+            .ok_or_else(|| pkcs11_core::backend::error::BackendError::configuration_error("Invalid NetHSM configuration"))?;
+        
+        let device = backend::NetHsmBackend::config_to_device(nethsm_config.clone())?;
+        let backend = backend::NetHsmBackend::new(device)?;
+        Ok(Box::new(backend))
+    })?;
+    
+    Ok(())
 }
 
 /// Get or initialize the global backend

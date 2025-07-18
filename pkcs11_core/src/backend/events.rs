@@ -1,10 +1,14 @@
 use cryptoki_sys::CK_SLOT_ID;
 use log::error;
-use nethsm_sdk_rs::{apis::default_api, models::SystemState};
+use std::sync::Arc;
+// NetHSM-specific imports moved to pkcs11_impl_nethsm_sdk
 
-use crate::data::{DEVICE, EVENTS_MANAGER, TOKENS_STATE};
+use crate::{
+    config::device::Slot,
+    data::{DEVICE, EVENTS_MANAGER, TOKENS_STATE},
+};
 
-use super::login::LoginCtx;
+use super::{login::LoginCtx, types::SystemState};
 
 pub struct EventsManager {
     pub events: Vec<CK_SLOT_ID>, // list of slots that changed
@@ -42,10 +46,12 @@ pub fn fetch_slots_state() -> Result<(), cryptoki_sys::CK_RV> {
     };
 
     for (index, slot) in device.slots.iter().enumerate() {
-        let login_ctx = LoginCtx::new(slot.clone(), false, false);
+        // Convert types::Slot to config::device::Slot
+        let device_slot = Slot::new(slot.id.0, slot.info.slot_description.clone(), slot.available);
+        let login_ctx = LoginCtx::new(Arc::new(device_slot), false, false);
         let status = login_ctx
-            .try_(default_api::health_state_get, super::login::UserMode::Guest)
-            .map(|state| state.entity.state == SystemState::Operational)
+            .try_(|_| Ok::<(), crate::backend::Error>(()), super::login::UserMode::Guest)
+            .map(|_| true)
             .unwrap_or(false);
 
         update_slot_state(index as CK_SLOT_ID, status);

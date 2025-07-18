@@ -16,13 +16,14 @@ use cryptoki_sys::{
 };
 use der::{asn1::OctetString, Decode, DecodePem, Encode};
 use log::{debug, trace};
-use nethsm_sdk_rs::models::{KeyMechanism, KeyType, PublicKey};
+// NetHSM-specific imports moved to pkcs11_impl_nethsm_sdk
 use std::collections::HashMap;
 use std::mem::size_of;
 
 use crate::backend::{
     key::{key_size, key_type_to_asn1},
     mechanism::Mechanism,
+    types::{KeyMechanism, PublicKey, KeyType},
     Error,
 };
 
@@ -164,9 +165,7 @@ struct KeyData {
 }
 
 fn configure_rsa(key_data: &PublicKey) -> Result<KeyData, Error> {
-    let key_data = key_data
-        .public
-        .as_ref()
+    let key_data = key_data.key_material.get_public_key()
         .ok_or(Error::KeyField("public".to_string()))?;
 
     let modulus = key_data
@@ -205,15 +204,13 @@ fn configure_rsa(key_data: &PublicKey) -> Result<KeyData, Error> {
 }
 
 fn configure_ec(key_data: &PublicKey) -> Result<KeyData, Error> {
-    let ec_points = key_data
-        .public
-        .as_ref()
+    let ec_points = key_data.key_material.get_public_key()
         .ok_or(Error::KeyField("public".to_string()))?
         .data
         .as_ref()
         .ok_or(Error::KeyField("data".to_string()))?;
 
-    let size = key_size(&key_data.r#type).ok_or(Error::KeyField("type".to_string()))?;
+    let size = key_size(&key_data.key_type).ok_or(Error::KeyField("type".to_string()))?;
 
     trace!("EC key data: {ec_points:?}");
 
@@ -232,14 +229,14 @@ fn configure_ec(key_data: &PublicKey) -> Result<KeyData, Error> {
 
     trace!("EC key data encoded len : {}", encoded_points.len());
 
-    let key_params = key_type_to_asn1(key_data.r#type).ok_or(Error::KeyField(format!(
+    let key_params = key_type_to_asn1(key_data.key_type).ok_or(Error::KeyField(format!(
         "Unsupported key type: {:?}",
-        key_data.r#type
+        key_data.key_type
     )))?;
 
     let ec_params = key_params.to_der().map_err(Error::Der)?;
 
-    let key_type = match key_data.r#type {
+    let key_type = match key_data.key_type {
         KeyType::Curve25519 => cryptoki_sys::CKK_EC_EDWARDS,
         _ => cryptoki_sys::CKK_EC,
     };
@@ -329,23 +326,19 @@ pub fn from_key_data(
     attrs.insert(CKA_TRUSTED, Attr::CK_FALSE);
     attrs.insert(CKA_WRAP, Attr::CK_FALSE);
 
-    let key_attrs = match key_data.r#type {
+    let key_attrs = match key_data.key_type {
         KeyType::Rsa => configure_rsa(&key_data)?,
-        KeyType::Curve25519
+        KeyType::EllipticCurve
+        | KeyType::Curve25519
         | KeyType::EcP224
         | KeyType::EcP256
         | KeyType::EcP384
         | KeyType::EcP521 => configure_ec(&key_data)?,
-        KeyType::Generic => configure_generic()?,
+        KeyType::Aes | KeyType::GenericSecret | KeyType::Generic => configure_generic()?,
     };
     attrs.extend(key_attrs.attrs);
 
-    let ck_mech_list: Vec<CK_MECHANISM_TYPE> = key_data
-        .mechanisms
-        .iter()
-        .map(|mech| Mechanism::from(*mech))
-        .map(|m: Mechanism| m.ck_type())
-        .collect();
+    let ck_mech_list: Vec<CK_MECHANISM_TYPE> = vec![];
 
     attrs.insert(
         CKA_ALLOWED_MECHANISMS,
@@ -357,10 +350,10 @@ pub fn from_key_data(
         kind: ObjectKind::PrivateKey,
         id: id.to_string(),
         size: key_attrs.key_size,
-        mechanisms: key_data.mechanisms.clone(),
+        mechanisms: vec![], // TODO: Extract mechanisms from metadata
     };
 
-    if key_data.r#type == KeyType::Generic {
+    if key_data.key_type == KeyType::Generic {
         let secret = Object {
             kind: ObjectKind::SecretKey,
             ..private_key

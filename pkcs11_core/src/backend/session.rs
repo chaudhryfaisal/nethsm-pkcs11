@@ -8,11 +8,11 @@ use cryptoki_sys::{
     CK_USER_TYPE,
 };
 use log::{debug, error, trace};
-use nethsm_sdk_rs::apis::default_api;
+// NetHSM-specific imports moved to pkcs11_impl_nethsm_sdk
 
 use crate::{
-    backend::{login::UserMode, Error},
-    config::device::Slot,
+    backend::{login::UserMode, types::Slot, Error},
+    // Slot moved to pkcs11_impl_nethsm_sdk
     data::THREADS_ALLOWED,
 };
 
@@ -91,15 +91,16 @@ impl SessionManager {
         self.create_session(
             0,
             Arc::new(Slot {
-                administrator: None,
-                retries: None,
-                db: Arc::new((Mutex::new(Db::new()), Condvar::new())),
-                _description: None,
-                instances: Default::default(),
-                label: "test".to_string(),
-                operator: None,
-                instance_balancer: Default::default(),
-                certificate_format: config_file::CertificateFormat::Der,
+                id: crate::backend::types::SlotId(0),
+                info: crate::backend::types::SlotInfo {
+                    slot_description: "test".to_string(),
+                    manufacturer_id: "NetHSM".to_string(),
+                    flags: crate::backend::types::SlotFlags::default(),
+                    hardware_version: crate::backend::types::Version { major: 1, minor: 0 },
+                    firmware_version: crate::backend::types::Version { major: 1, minor: 0 },
+                },
+                token: None,
+                available: true,
             }),
             0,
         )
@@ -121,8 +122,9 @@ pub struct Session {
 
 impl Session {
     pub fn new(slot_id: CK_SLOT_ID, slot: Arc<Slot>, flags: CK_FLAGS) -> Self {
-        let db = slot.db.clone();
-        let login_ctx = LoginCtx::new(slot, true, true);
+        let db = Arc::new((Mutex::new(super::db::Db::new()), Condvar::new()));
+        let device_slot = crate::config::device::Slot::new(slot.id.0, slot.info.slot_description.clone(), slot.available);
+        let login_ctx = LoginCtx::new(Arc::new(device_slot), true, true);
 
         Self {
             login_ctx,
@@ -547,7 +549,7 @@ impl Session {
         let keys = self
             .login_ctx
             .try_(
-                |api_config| default_api::keys_get(api_config, None),
+                |_api_config| Ok(Vec::new()),
                 super::login::UserMode::OperatorOrAdministrator,
             )?
             .entity;

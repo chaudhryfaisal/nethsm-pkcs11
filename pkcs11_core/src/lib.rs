@@ -7,7 +7,6 @@ pub mod utils;
 pub mod backend;
 mod config;
 mod defs;
-mod ureq;
 
 #[cfg(panic = "abort")]
 mod unwind_stubs;
@@ -26,3 +25,6 @@ pub use backend::{
     types::*,
     CryptoBackend, SyncBackendWrapper, ThreadSafeBackend,
 };
+
+// Re-export additional types that may be needed
+pub use backend::types::{SystemState, KeyMechanism};

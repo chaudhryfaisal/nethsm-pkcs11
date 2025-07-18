@@ -5,11 +5,14 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
+use arc_swap::ArcSwap;
 use nethsm_sdk_rs::{
     apis::default_api,
     models::{HealthStateData, InfoData, SystemState as NetHsmSystemState},
 };
+use ureq::tls::{TlsConfig, TlsProvider::Rustls};
 
 use pkcs11_core::{
     backend::{
@@ -20,20 +23,26 @@ use pkcs11_core::{
 };
 
 use crate::{
-    config::NetHsmConfig,
+    config::{NetHsmConfig, InstanceData, InstanceState, Slot, Device, UserConfig, RetryConfig, TcpKeepaliveConfig},
     error::{convert_api_error, NetHsmError, NetHsmResult},
+    network::{TcpConnector, RustlsConnector, create_ureq_connector, create_ureq_resolver},
+    operations::{KeyOperations, SignOperations, EncryptOperations, RandomOperations},
 };
 
 /// NetHSM backend implementation
 pub struct NetHsmBackend {
-    /// Configuration
-    config: NetHsmConfig,
+    /// Device configuration containing all slots
+    device: Device,
     /// Initialization state
     initialized: bool,
     /// Session management
     sessions: Arc<Mutex<HashMap<SessionHandle, NetHsmSession>>>,
     /// Next session handle
     next_session_handle: Arc<Mutex<u64>>,
+    /// Key handle mapping
+    key_handles: Arc<Mutex<HashMap<KeyHandle, String>>>,
+    /// Next key handle
+    next_key_handle: Arc<Mutex<u64>>,
 }
 
 /// NetHSM session information
@@ -45,30 +54,65 @@ struct NetHsmSession {
     state: SessionState,
     user_type: Option<UserType>,
     authenticated: bool,
+    slot: Arc<Slot>,
 }
 
 impl NetHsmBackend {
-    /// Create a new NetHSM backend
-    pub fn new(config: NetHsmConfig) -> Result<Self, NetHsmError> {
+    /// Create a new NetHSM backend from a device configuration
+    pub fn new(device: Device) -> Result<Self, NetHsmError> {
         Ok(Self {
-            config,
+            device,
             initialized: false,
             sessions: Arc::new(Mutex::new(HashMap::new())),
             next_session_handle: Arc::new(Mutex::new(1)),
+            key_handles: Arc::new(Mutex::new(HashMap::new())),
+            next_key_handle: Arc::new(Mutex::new(1)),
         })
     }
 
-    /// Get the number of configured slots (based on URLs)
-    fn slot_count(&self) -> usize {
-        self.config.urls().len()
+    /// Create a NetHSM backend from a simple configuration
+    pub fn from_config(config: NetHsmConfig) -> Result<Self, NetHsmError> {
+        // Convert simple config to device configuration
+        let device = Self::config_to_device(config)?;
+        Self::new(device)
     }
 
-    /// Get NetHSM URL for a slot
-    fn get_slot_url(&self, slot_id: SlotId) -> Result<&str, NetHsmError> {
-        self.config
-            .urls()
+    /// Convert NetHsmConfig to Device configuration
+    pub fn config_to_device(config: NetHsmConfig) -> Result<Device, NetHsmError> {
+        let mut slots = Vec::new();
+        
+        for (index, url) in config.urls.iter().enumerate() {
+            let slot = Slot {
+                label: format!("NetHSM Slot {}", index),
+                retries: config.retries.clone(),
+                description: Some(format!("NetHSM instance at {}", url)),
+                instances: vec![], // TODO: Create instances from URLs
+                operator: config.operator.clone(),
+                administrator: config.administrator.clone(),
+                instance_balancer: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                timeout_seconds: config.timeout_seconds,
+                tcp_keepalive: config.tcp_keepalive.clone(),
+                connections_max_idle_duration: config.connections_max_idle_duration,
+            };
+            slots.push(Arc::new(slot));
+        }
+
+        Ok(Device {
+            slots,
+            enable_set_attribute_value: config.enable_set_attribute_value,
+        })
+    }
+
+    /// Get the number of configured slots
+    fn slot_count(&self) -> usize {
+        self.device.slots.len()
+    }
+
+    /// Get slot by ID
+    fn get_slot(&self, slot_id: SlotId) -> Result<&Arc<Slot>, NetHsmError> {
+        self.device
+            .slots
             .get(slot_id.0 as usize)
-            .map(|s| s.as_str())
             .ok_or_else(|| {
                 NetHsmError::resource_not_found("slot", &slot_id.0.to_string())
             })
@@ -271,8 +315,8 @@ impl CryptoBackend for NetHsmBackend {
         slot_id: SlotId,
         flags: SessionFlags,
     ) -> Result<SessionHandle, Self::Error> {
-        // Validate slot exists
-        let _url = self.get_slot_url(slot_id)?;
+        // Validate slot exists and get reference
+        let slot = self.get_slot(slot_id)?.clone();
 
         let handle = self.next_session_handle();
         let session = NetHsmSession {
@@ -286,6 +330,7 @@ impl CryptoBackend for NetHsmBackend {
             },
             user_type: None,
             authenticated: false,
+            slot,
         };
 
         self.sessions.lock().unwrap().insert(handle, session);

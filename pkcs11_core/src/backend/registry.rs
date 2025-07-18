@@ -4,7 +4,6 @@
 //! instantiating different cryptographic backends at runtime.
 
 use super::{BackendConfig, BackendError, BackendResult, BackendType, ErasedCryptoBackend};
-use super::nethsm::{NetHsmBackend, NetHsmBackendConfig};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -222,17 +221,10 @@ pub fn initialize_backends() -> BackendResult<Vec<BackendType>> {
 }
 
 /// Initialize built-in backends
+/// Note: This is now a placeholder - actual backend registration should be done
+/// by the specific backend implementations (e.g., pkcs11_impl_nethsm_sdk)
 pub fn initialize_builtin_backends() -> BackendResult<()> {
-    // Register NetHSM backend
-    register_backend(BackendType::NetHsm, |config| {
-        let nethsm_config = config
-            .as_any()
-            .downcast_ref::<NetHsmBackendConfig>()
-            .ok_or_else(|| BackendError::configuration_error("Invalid NetHSM configuration"))?;
-        
-        let backend = NetHsmBackend::new(nethsm_config.clone())?;
-        Ok(Box::new(backend) as Box<dyn ErasedCryptoBackend>)
-    })?;
-    
+    // Backend registration is now handled by individual backend crates
+    // This function is kept for backward compatibility but does nothing
     Ok(())
 }

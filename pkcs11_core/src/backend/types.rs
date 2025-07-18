@@ -39,6 +39,18 @@ pub enum KeyType {
     Aes,
     /// Generic secret key
     GenericSecret,
+    /// Generic key (alias for GenericSecret)
+    Generic,
+    /// NIST P-224 elliptic curve
+    EcP224,
+    /// NIST P-256 elliptic curve
+    EcP256,
+    /// NIST P-384 elliptic curve
+    EcP384,
+    /// NIST P-521 elliptic curve
+    EcP521,
+    /// Curve25519 (Ed25519)
+    Curve25519,
 }
 
 /// Backend-agnostic mechanism type
@@ -537,4 +549,298 @@ pub enum EncryptParameters {
         /// Initialization vector
         iv: Vec<u8>,
     },
+}
+
+/// Private key representation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrivateKey {
+    /// Key type
+    pub key_type: KeyType,
+    /// Key material
+    pub key_material: KeyMaterial,
+    /// Key metadata
+    pub metadata: KeyMetadata,
+}
+
+/// Key metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyMetadata {
+    /// Key label
+    pub label: Option<String>,
+    /// Key ID
+    pub id: Option<Vec<u8>>,
+    /// Key usage attributes
+    pub usage: KeyUsage,
+    /// Key size in bits
+    pub key_size: u32,
+}
+
+/// Public key representation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublicKey {
+    /// Key type
+    pub key_type: KeyType,
+    /// Key material (public components only)
+    pub key_material: KeyMaterial,
+    /// Key metadata
+    pub metadata: KeyMetadata,
+}
+
+/// Key item for storage and retrieval
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyItem {
+    /// Key handle
+    pub handle: KeyHandle,
+    /// Key information
+    pub info: KeyInfo,
+    /// Private key data (if available)
+    pub private_key: Option<PrivateKey>,
+    /// Public key data
+    pub public_key: Option<PublicKey>,
+}
+
+/// Key private data for internal use
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyPrivateData {
+    /// Private key material
+    pub private_material: Vec<u8>,
+    /// Key derivation parameters
+    pub derivation_params: Option<KeyDerivationParams>,
+}
+
+/// Key derivation parameters
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum KeyDerivationParams {
+    /// PBKDF2 parameters
+    Pbkdf2 {
+        /// Salt
+        salt: Vec<u8>,
+        /// Iteration count
+        iterations: u32,
+        /// Hash function
+        hash: MechanismType,
+    },
+}
+
+/// Key generation request data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyGenerateRequestData {
+    /// Key generation specification
+    pub spec: KeyGenerationSpec,
+    /// Additional parameters
+    pub params: Option<HashMap<String, serde_json::Value>>,
+}
+
+/// Sign mode enumeration for backend operations
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SignMode {
+    /// PKCS#1 v1.5 with MD5
+    PkcsMd5,
+    /// PKCS#1 v1.5 with SHA-1
+    PkcsSha1,
+    /// PKCS#1 v1.5 with SHA-224
+    PkcsSha224,
+    /// PKCS#1 v1.5 with SHA-256
+    PkcsSha256,
+    /// PKCS#1 v1.5 with SHA-384
+    PkcsSha384,
+    /// PKCS#1 v1.5 with SHA-512
+    PkcsSha512,
+    /// PKCS#1 v1.5 (generic)
+    Pkcs1,
+    /// PSS with MD5
+    PssMd5,
+    /// PSS with SHA-1
+    PssSha1,
+    /// PSS with SHA-224
+    PssSha224,
+    /// PSS with SHA-256
+    PssSha256,
+    /// PSS with SHA-384
+    PssSha384,
+    /// PSS with SHA-512
+    PssSha512,
+    /// ECDSA signature
+    Ecdsa,
+    /// EdDSA signature
+    EdDsa,
+}
+
+/// Encrypt mode enumeration for backend operations
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EncryptMode {
+    /// AES CBC encryption
+    AesCbc,
+    /// RSA PKCS#1 v1.5 encryption
+    RsaPkcs1,
+    /// RSA OAEP encryption
+    RsaOaep,
+}
+
+/// Decrypt mode enumeration for backend operations
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DecryptMode {
+    /// AES CBC decryption
+    AesCbc,
+    /// RSA raw decryption
+    Raw,
+    /// RSA PKCS#1 v1.5 decryption
+    Pkcs1,
+    /// RSA OAEP with MD5
+    OaepMd5,
+    /// RSA OAEP with SHA-1
+    OaepSha1,
+    /// RSA OAEP with SHA-224
+    OaepSha224,
+    /// RSA OAEP with SHA-256
+    OaepSha256,
+    /// RSA OAEP with SHA-384
+    OaepSha384,
+    /// RSA OAEP with SHA-512
+    OaepSha512,
+}
+
+/// Key mechanism enumeration for backend operations
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum KeyMechanism {
+    /// AES decryption CBC
+    AesDecryptionCbc,
+    /// AES encryption CBC
+    AesEncryptionCbc,
+    /// ECDSA signature
+    EcdsaSignature,
+    /// EdDSA signature
+    EdDsaSignature,
+    /// RSA decryption OAEP MD5
+    RsaDecryptionOaepMd5,
+    /// RSA decryption OAEP SHA-1
+    RsaDecryptionOaepSha1,
+    /// RSA decryption OAEP SHA-224
+    RsaDecryptionOaepSha224,
+    /// RSA decryption OAEP SHA-256
+    RsaDecryptionOaepSha256,
+    /// RSA decryption OAEP SHA-384
+    RsaDecryptionOaepSha384,
+    /// RSA decryption OAEP SHA-512
+    RsaDecryptionOaepSha512,
+    /// RSA decryption PKCS#1
+    RsaDecryptionPkcs1,
+    /// RSA decryption raw
+    RsaDecryptionRaw,
+    /// RSA signature PKCS#1
+    RsaSignaturePkcs1,
+    /// RSA signature PSS MD5
+    RsaSignaturePssMd5,
+    /// RSA signature PSS SHA-1
+    RsaSignaturePssSha1,
+    /// RSA signature PSS SHA-224
+    RsaSignaturePssSha224,
+    /// RSA signature PSS SHA-256
+    RsaSignaturePssSha256,
+    /// RSA signature PSS SHA-384
+    RsaSignaturePssSha384,
+    /// RSA signature PSS SHA-512
+    RsaSignaturePssSha512,
+}
+
+/// Device configuration and state
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Device {
+    /// Device information
+    pub info: DeviceInfo,
+    /// System state
+    pub state: SystemState,
+    /// Available slots
+    pub slots: Vec<Slot>,
+    /// Device configuration
+    pub config: DeviceConfig,
+}
+
+/// Device configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceConfig {
+    /// Device label
+    pub label: String,
+    /// Maximum sessions
+    pub max_sessions: u32,
+    /// Supported mechanisms
+    pub mechanisms: Vec<MechanismInfo>,
+    /// Enable set attribute value operation
+    pub enable_set_attribute_value: bool,
+}
+
+/// Slot representation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Slot {
+    /// Slot ID
+    pub id: SlotId,
+    /// Slot information
+    pub info: SlotInfo,
+    /// Token information (if present)
+    pub token: Option<TokenInfo>,
+    /// Whether slot is available
+    pub available: bool,
+}
+
+/// Instance data for device management
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstanceData {
+    /// Instance identifier
+    pub instance_id: String,
+    /// Device reference
+    pub device: Device,
+    /// Active sessions
+    pub sessions: HashMap<SessionHandle, SessionInfo>,
+    /// Authentication state
+    pub auth_state: AuthenticationState,
+}
+
+/// Weak reference to instance data
+#[derive(Debug, Clone)]
+pub struct WeakInstanceData {
+    /// Weak reference to instance
+    pub instance_ref: std::sync::Weak<std::sync::RwLock<InstanceData>>,
+}
+
+/// Authentication state
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthenticationState {
+    /// Whether authenticated
+    pub authenticated: bool,
+    /// User type
+    pub user_type: Option<UserType>,
+    /// Session handle
+    pub session_handle: Option<SessionHandle>,
+}
+impl KeyMaterial {
+    pub fn get_public_key(&self) -> Option<&[u8]> {
+        match self {
+            KeyMaterial::Rsa { modulus, .. } => Some(modulus),
+            KeyMaterial::EllipticCurve { public_point, .. } => Some(public_point),
+            KeyMaterial::Symmetric { .. } => None,
+        }
+    }
+
+    pub fn get_private_key(&self) -> Option<&[u8]> {
+        match self {
+            KeyMaterial::Rsa { private_exponent, .. } => private_exponent.as_deref(),
+            KeyMaterial::EllipticCurve { private_scalar, .. } => private_scalar.as_deref(),
+            KeyMaterial::Symmetric { key_data } => Some(key_data),
+        }
+    }
+
+    pub fn get_symmetric_key(&self) -> Option<&[u8]> {
+        match self {
+            KeyMaterial::Symmetric { key_data } => Some(key_data),
+            _ => None,
+        }
+    }
+
+    pub fn key_type(&self) -> KeyType {
+        match self {
+            KeyMaterial::Rsa { .. } => KeyType::Rsa,
+            KeyMaterial::EllipticCurve { .. } => KeyType::EllipticCurve,
+            KeyMaterial::Symmetric { .. } => KeyType::GenericSecret,
+        }
+    }
 }

@@ -5,7 +5,9 @@
 use cryptoki_sys::{CKM_RSA_PKCS_OAEP, CK_MECHANISM_TYPE, CK_ULONG};
 use hex_literal::hex;
 use log::trace;
-use nethsm_sdk_rs::models::{DecryptMode, EncryptMode, KeyMechanism, KeyType, SignMode};
+// NetHSM-specific imports moved to pkcs11_impl_nethsm_sdk
+
+use super::types::{KeyMechanism, KeyType, SignMode, EncryptMode, DecryptMode};
 
 // from https://github.com/aws/aws-nitro-enclaves-acm/blob/main/src/vtok_p11/src/backend/mech.rs
 #[derive(Debug)]
@@ -164,7 +166,8 @@ impl Mechanism {
 
     pub fn from_key_type(key_type: KeyType) -> Vec<Self> {
         match key_type {
-            KeyType::Generic => vec![Self::AesCbc(None)],
+            KeyType::Generic | KeyType::GenericSecret => vec![Self::AesCbc(None)],
+            KeyType::Aes => vec![Self::AesCbc(None)],
             KeyType::Rsa => vec![
                 Self::RsaPkcs(None),
                 Self::RsaPkcsOaep(MechDigest::Md5),
@@ -181,7 +184,7 @@ impl Mechanism {
                 Self::RsaPkcsPss(MechDigest::Sha512, false),
                 Self::RsaX509,
             ],
-            KeyType::EcP224 | KeyType::EcP256 | KeyType::EcP384 | KeyType::EcP521 => {
+            KeyType::EllipticCurve | KeyType::EcP224 | KeyType::EcP256 | KeyType::EcP384 | KeyType::EcP521 => {
                 vec![Self::Ecdsa(None)]
             }
             KeyType::Curve25519 => vec![Self::EdDsa],

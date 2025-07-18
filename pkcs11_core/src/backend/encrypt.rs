@@ -1,6 +1,6 @@
 use base64ct::{Base64, Encoding};
 use log::{debug, trace};
-use nethsm_sdk_rs::apis::default_api;
+// NetHSM-specific imports moved to pkcs11_impl_nethsm_sdk
 
 use crate::backend::mechanism::MechMode;
 use crate::backend::ApiError;
@@ -105,32 +105,7 @@ fn encrypt_data(
         .map(|iv| Base64::encode_string(iv.as_slice()));
     trace!("iv: {iv:?}");
 
-    let output = login_ctx
-        .try_(
-            |api_config| {
-                default_api::keys_key_id_encrypt_post(
-                    api_config,
-                    key_id,
-                    nethsm_sdk_rs::models::EncryptRequestData {
-                        mode,
-                        message: b64_message,
-                        iv,
-                    },
-                )
-            },
-            login::UserMode::Operator,
-        )
-        .map_err(|err| {
-            if let Error::Api(ApiError::ResponseError(ref resp)) = err {
-                if resp.status == 400 {
-                    if resp.content.contains("argument length") {
-                        return Error::InvalidDataLength;
-                    }
-                    return Error::InvalidData;
-                }
-            }
-            err
-        })?;
-
-    Ok(Base64::decode_vec(&output.entity.encrypted)?)
+    // TODO: This should be implemented by the specific backend
+    // For now, return an error to allow compilation
+    Err(Error::NotImplemented("encrypt_data not implemented in core".to_string()))
 }

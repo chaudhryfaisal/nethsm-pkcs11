@@ -38,15 +38,10 @@ der = { workspace = true }
 pem-rfc7468 = { workspace = true }
 x509-cert = { workspace = true }
 
-# NetHSM-specific dependencies (conditional)
-nethsm-sdk-rs = { workspace = true, optional = true }
-rustls = { workspace = true, optional = true }
-rustls-native-certs = { workspace = true, optional = true }
-rustls-pki-types = { workspace = true, optional = true }
-ureq = { workspace = true, optional = true }
-socket2 = { workspace = true, optional = true }
-rayon = { workspace = true, optional = true }
-syslog = { workspace = true, optional = true }
+# System dependencies
+syslog = { workspace = true }
+uuid = { workspace = true }
+rayon = { workspace = true }
 
 # Config file support
 config_file = { path = "config_file" }
@@ -62,15 +57,5 @@ tokio = { workspace = true }
 [features]
 pkcs11-full-tests = []
 # Backend implementations can be enabled via features
-nethsm-backend = [
-    "dep:nethsm-sdk-rs",
-    "dep:rustls",
-    "dep:rustls-native-certs",
-    "dep:rustls-pki-types",
-    "dep:ureq",
-    "dep:socket2",
-    "dep:rayon",
-    "dep:syslog"
-]
 mock-backend = []
 default = []

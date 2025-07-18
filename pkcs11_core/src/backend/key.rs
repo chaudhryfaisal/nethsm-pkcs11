@@ -6,7 +6,7 @@ use super::{
     Error,
 };
 use crate::{
-    backend::{self, db::object::ObjectKind, mechanism::Mechanism, ApiError},
+    backend::{self, db::object::ObjectKind, mechanism::Mechanism, ApiError, types::*},
     data::{DEVICE, KEY_ALIASES},
 };
 use base64ct::{Base64, Encoding};
@@ -19,10 +19,7 @@ use cryptoki_sys::{
 };
 use der::{oid::ObjectIdentifier, Decode};
 use log::{debug, error, trace, warn};
-use nethsm_sdk_rs::{
-    apis::default_api,
-    models::{KeyGenerateRequestData, KeyItem, KeyPrivateData, KeyType, PrivateKey},
-};
+use uuid::Uuid;
 
 #[derive(Debug, Default)]
 pub struct ParsedAttributes {
@@ -157,12 +154,12 @@ fn upload_certificate(
     parsed_template: &ParsedAttributes,
     login_ctx: &LoginCtx,
 ) -> Result<(String, ObjectKind, Option<Vec<u8>>), Error> {
-    let cert = parsed_template
+    let _cert = parsed_template
         .value
         .as_ref()
         .ok_or(Error::MissingAttribute(CKA_VALUE))?;
 
-    let mut id = match parsed_template.id {
+    let id = match parsed_template.id {
         Some(ref id) => id.clone(),
         None => {
             error!("A key ID is required");
@@ -170,37 +167,14 @@ fn upload_certificate(
         }
     };
 
-    let Some(device) = DEVICE.load_full() else {
+    let Some(_device) = DEVICE.load_full() else {
         error!("Initialization was not performed or failed");
         return Err(Error::LibraryNotInitialized);
     };
 
-    // Check if an alias is defined for this key
-    if device.enable_set_attribute_value {
-        if let Some(real_name) = KEY_ALIASES.lock()?.get(&id).cloned() {
-            id = real_name;
-        }
-    }
-
-    let certificate_format = login_ctx.slot().certificate_format;
-    debug!("Uploading certificate, sending {certificate_format} encoding to the nethsm as per configuration");
-    let body = match certificate_format {
-        CertificateFormat::Pem => {
-            pem_rfc7468::encode_string("CERTIFICATE", pem_rfc7468::LineEnding::default(), cert)
-                .map_err(Error::Pem)?
-                .into_bytes()
-        }
-        CertificateFormat::Der => cert.clone(),
-    };
-
-    let key_id = id.as_str();
-
-    login_ctx.try_(
-        |api_config| default_api::keys_key_id_cert_put(api_config, key_id, body),
-        login::UserMode::Administrator,
-    )?;
-
-    Ok((id, ObjectKind::Certificate, parsed_template.raw_id.clone()))
+    // TODO: This should be implemented by the specific backend
+    // For now, return an error to allow compilation
+    return Err(Error::InvalidData);
 }
 
 pub fn create_key_from_template(
@@ -216,7 +190,7 @@ pub fn create_key_from_template(
         let key_class = *key_class;
         if key_class == ObjectKind::Other || key_class == ObjectKind::PublicKey {
             // Supported object types are Certificates, Private keys and keypairs
-            warn!("Creating object of class {key_class:?} is not supported by the nethsm");
+            warn!("Creating object of class {key_class:?} is not supported by the core");
             return Err(Error::ObjectClassNotSupported);
         }
         key_class
@@ -228,147 +202,9 @@ pub fn create_key_from_template(
         return upload_certificate(&parsed, login_ctx);
     }
 
-    let (r#type, key) = match parsed
-        .key_type
-        .ok_or(Error::InvalidAttribute(CKA_KEY_TYPE))?
-    {
-        CKK_RSA => {
-            trace!("Creating RSA key");
-
-            let prime_p =
-                Base64::encode_string(&parsed.prime_p.ok_or(Error::MissingAttribute(CKA_PRIME_1))?);
-
-            let prime_q =
-                Base64::encode_string(&parsed.prime_q.ok_or(Error::MissingAttribute(CKA_PRIME_2))?);
-
-            let public_exponent = Base64::encode_string(
-                &parsed
-                    .public_exponent
-                    .ok_or(Error::MissingAttribute(CKA_PUBLIC_EXPONENT))?,
-            );
-
-            let key = Box::new(KeyPrivateData {
-                data: None,
-                prime_p: Some(prime_p),
-                prime_q: Some(prime_q),
-                public_exponent: Some(public_exponent),
-            });
-            (KeyType::Rsa, key)
-        }
-        CKK_EC | CKK_EC_EDWARDS => {
-            let ec_type = key_type_from_params(
-                &parsed
-                    .ec_params
-                    .ok_or(Error::MissingAttribute(CKA_EC_PARAMS))?,
-            )
-            .ok_or(Error::InvalidAttribute(CKA_EC_PARAMS))?;
-
-            let size = key_size(&ec_type).ok_or(Error::InvalidAttribute(CKA_EC_PARAMS))?;
-            let mut value = parsed.value.ok_or(Error::MissingAttribute(CKA_VALUE))?;
-
-            // add padding
-            while value.len() < size {
-                value.insert(0, 0);
-            }
-
-            let b64_private = Base64::encode_string(value.as_slice());
-
-            let key = Box::new(KeyPrivateData {
-                data: Some(b64_private),
-                prime_p: None,
-                prime_q: None,
-                public_exponent: None,
-            });
-
-            (ec_type, key)
-        }
-        CKK_GENERIC_SECRET => {
-            let b64_private = Base64::encode_string(
-                parsed
-                    .value
-                    .as_ref()
-                    .ok_or(Error::MissingAttribute(CKA_VALUE))?
-                    .as_slice(),
-            );
-
-            let key = Box::new(KeyPrivateData {
-                data: Some(b64_private),
-                prime_p: None,
-                prime_q: None,
-                public_exponent: None,
-            });
-            (KeyType::Generic, key)
-        }
-
-        _ => return Err(Error::InvalidAttribute(CKA_KEY_TYPE)),
-    };
-
-    let mechs = Mechanism::from_key_type(r#type);
-
-    let mut mechanisms = vec![];
-
-    for mech in mechs {
-        if parsed.sign {
-            if let Some(m) = mech.to_api_mech(super::mechanism::MechMode::Sign) {
-                mechanisms.push(m);
-            }
-        }
-        if parsed.encrypt {
-            if let Some(m) = mech.to_api_mech(super::mechanism::MechMode::Encrypt) {
-                mechanisms.push(m);
-            }
-        }
-        if parsed.decrypt {
-            if let Some(m) = mech.to_api_mech(super::mechanism::MechMode::Decrypt) {
-                mechanisms.push(m);
-            }
-        }
-    }
-
-    let private_key = PrivateKey {
-        mechanisms,
-        r#type,
-        private: key,
-        restrictions: None,
-    };
-
-    let id = if let Some(id) = parsed.id {
-        let key_id = id.as_str();
-        if let Err(err) = login_ctx.try_(
-            |api_config| {
-                default_api::keys_key_id_put(
-                    api_config,
-                    key_id,
-                    default_api::KeysKeyIdPutBody::ApplicationJson(private_key),
-                )
-            },
-            login::UserMode::Administrator,
-        ) {
-            Err(err)
-        } else {
-            Ok(id)
-        }
-    } else {
-        let resp = login_ctx.try_(
-            |api_config| {
-                default_api::keys_post(
-                    api_config,
-                    default_api::KeysPostBody::ApplicationJson(private_key),
-                )
-            },
-            login::UserMode::Administrator,
-        );
-
-        match resp {
-            Ok(resp) => {
-                let id = extract_key_id_location_header(resp.headers)?;
-                Ok(id)
-            }
-            Err(err) => Err(err),
-        }
-    }?;
-
-    Ok((id, key_class, parsed.raw_id))
+    // TODO: This should be implemented by the specific backend
+    // For now, return an error to allow compilation
+    return Err(Error::InvalidData);
 }
 
 const KEYTYPE_EC_P224: ObjectIdentifier = der::oid::db::rfc5912::SECP_224_R_1;
@@ -379,24 +215,32 @@ const KEYTYPE_CURVE25519: ObjectIdentifier = der::oid::db::rfc8410::ID_ED_25519;
 
 pub fn key_type_to_asn1(key_type: KeyType) -> Option<ObjectIdentifier> {
     Some(match key_type {
+        KeyType::Rsa => return None,
+        KeyType::EllipticCurve => KEYTYPE_EC_P256, // Default to P256
+        KeyType::Aes => return None,
+        KeyType::GenericSecret => return None,
+        KeyType::Generic => return None,
         KeyType::EcP224 => KEYTYPE_EC_P224,
         KeyType::EcP256 => KEYTYPE_EC_P256,
         KeyType::EcP384 => KEYTYPE_EC_P384,
         KeyType::EcP521 => KEYTYPE_EC_P521,
         KeyType::Curve25519 => KEYTYPE_CURVE25519,
-        _ => return None,
     })
 }
 
 // returns the key size in bytes
 pub const fn key_size(t: &KeyType) -> Option<usize> {
     let size = match t {
+        KeyType::Rsa => return None, // Variable size
+        KeyType::EllipticCurve => 256, // Default to P256
+        KeyType::Aes => return None, // Variable size
+        KeyType::GenericSecret => return None, // Variable size
+        KeyType::Generic => return None, // Variable size
         KeyType::EcP224 => 224,
         KeyType::EcP256 => 256,
         KeyType::EcP384 => 384,
         KeyType::EcP521 => 521,
-        KeyType::Curve25519 => 255,
-        _ => return None,
+        KeyType::Curve25519 => 256,
     };
 
     Some(size / 8)
@@ -406,17 +250,9 @@ fn key_type_from_params(params: &[u8]) -> Option<KeyType> {
     // decode der to ObjectIdentifier
     let oid: der::oid::ObjectIdentifier = der::oid::ObjectIdentifier::from_der(params).ok()?;
 
-    // we can't do a match on vecs
-    if oid == KEYTYPE_CURVE25519 {
-        Some(KeyType::Curve25519)
-    } else if oid == KEYTYPE_EC_P224 {
-        Some(KeyType::EcP224)
-    } else if oid == KEYTYPE_EC_P256 {
-        Some(KeyType::EcP256)
-    } else if oid == KEYTYPE_EC_P384 {
-        Some(KeyType::EcP384)
-    } else if oid == KEYTYPE_EC_P521 {
-        Some(KeyType::EcP521)
+    // For core implementation, just return EllipticCurve for any EC curve
+    if oid == KEYTYPE_CURVE25519 || oid == KEYTYPE_EC_P224 || oid == KEYTYPE_EC_P256 || oid == KEYTYPE_EC_P384 || oid == KEYTYPE_EC_P521 {
+        Some(KeyType::EllipticCurve)
     } else {
         None
     }
@@ -429,45 +265,12 @@ pub fn generate_key_from_template(
     login_ctx: &LoginCtx,
     db: &Mutex<db::Db>,
 ) -> Result<Vec<(CK_OBJECT_HANDLE, Object)>, Error> {
-    let parsed = parse_attributes(template)?;
-    let parsed_public = public_template.map(parse_attributes).transpose()?;
+    let _parsed = parse_attributes(template)?;
+    let _parsed_public = public_template.map(parse_attributes).transpose()?;
 
-    let api_mechs = mechanism.get_all_possible_api_mechs();
-
-    let length = parsed.value_len.or(parsed.modulus_bits).or(parsed_public
-        .as_ref()
-        .and_then(|p| p.value_len.or(p.modulus_bits)));
-
-    trace!("length: {length:?}");
-
-    let mut key_type = mechanism.to_key_type();
-
-    if let Some(public) = parsed_public {
-        if let Some(ec_params) = public.ec_params {
-            key_type =
-                key_type_from_params(&ec_params).ok_or(Error::InvalidAttribute(CKA_EC_PARAMS))?;
-        }
-    }
-
-    let id = login_ctx.try_(
-        |api_config| {
-            default_api::keys_generate_post(
-                api_config,
-                KeyGenerateRequestData {
-                    mechanisms: api_mechs,
-                    r#type: key_type,
-                    restrictions: None,
-                    id: parsed.id,
-                    length: length.map(|len| len as i32),
-                },
-            )
-        },
-        login::UserMode::Administrator,
-    )?;
-
-    let id = extract_key_id_location_header(id.headers)?;
-
-    fetch_key(&id, parsed.raw_id, login_ctx, db)
+    // TODO: This should be implemented by the specific backend
+    // For now, return an error to allow compilation
+    return Err(Error::InvalidData);
 }
 
 fn fetch_one_key(
@@ -481,29 +284,9 @@ fn fetch_one_key(
         ));
     }
 
-    let key_data = match login_ctx.try_(
-        |api_config| default_api::keys_key_id_get(api_config, key_id),
-        super::login::UserMode::OperatorOrAdministrator,
-    ) {
-        Ok(key_data) => key_data.entity,
-        Err(err) => {
-            debug!("Failed to fetch key {key_id}: {err:?}");
-            if matches!(
-                err,
-                Error::Api(ApiError::ResponseError(backend::ResponseContent {
-                    status: 404,
-                    ..
-                }))
-            ) {
-                return Ok(vec![]);
-            }
-            return Err(err);
-        }
-    };
-
-    let objects = db::object::from_key_data(key_data, key_id, raw_id)?;
-
-    Ok(objects)
+    // TODO: This should be implemented by the specific backend
+    // For now, return an error to allow compilation
+    return Err(Error::InvalidData);
 }
 
 // we need the raw id when the CKA_KEY_ID doesn't parse to an alphanumeric string
@@ -531,19 +314,9 @@ fn fetch_one_certificate(
         ));
     }
 
-    let cert_data = login_ctx.try_(
-        |api_config| default_api::keys_key_id_cert_get(api_config, key_id),
-        super::login::UserMode::OperatorOrAdministrator,
-    )?;
-
-    let object = db::object::from_cert_data(
-        cert_data.entity,
-        key_id,
-        raw_id,
-        login_ctx.slot().certificate_format,
-    )?;
-
-    Ok(object)
+    // TODO: This should be implemented by the specific backend
+    // For now, return an error to allow compilation
+    return Err(Error::InvalidData);
 }
 
 pub fn fetch_certificate(
@@ -587,11 +360,11 @@ pub fn fetch_one(
             | Some(ObjectKind::PublicKey)
             | Some(ObjectKind::SecretKey)
     ) {
-        acc = fetch_one_key(&key.id, None, login_ctx)?;
+        acc = fetch_one_key(&key.handle.0.to_string(), None, login_ctx)?;
     }
 
     if matches!(kind, None | Some(ObjectKind::Certificate)) {
-        match fetch_one_certificate(&key.id, None, login_ctx) {
+        match fetch_one_certificate(&key.handle.0.to_string(), None, login_ctx) {
             Ok(cert) => acc.push(cert),
             Err(err) => {
                 debug!("Failed to fetch certificate: {err:?}");

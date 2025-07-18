@@ -23,7 +23,6 @@ pub mod slot;
 pub mod error;
 pub mod types;
 pub mod registry;
-pub mod nethsm;
 
 pub use error::{BackendError, BackendResult, ConfigError};
 pub use types::*;
@@ -43,8 +42,6 @@ use cryptoki_sys::{
 };
 use log::error;
 
-#[cfg(feature = "nethsm-backend")]
-use nethsm_sdk_rs::apis;
 
 /// Main trait for cryptographic backend implementations.
 ///
@@ -883,14 +880,12 @@ impl SyncBackendWrapper {
 
 // === Legacy Error Types for Backward Compatibility ===
 
-#[cfg(feature = "nethsm-backend")]
 #[derive(Debug, Clone)]
 pub struct ResponseContent {
     pub status: u16,
     pub content: String,
 }
 
-#[cfg(feature = "nethsm-backend")]
 #[derive(Debug)]
 pub enum ApiError {
     Ureq(String),
@@ -900,29 +895,6 @@ pub enum ApiError {
     InstanceRemoved,
     NoInstance,
     StringParse(std::string::FromUtf8Error),
-}
-
-#[cfg(feature = "nethsm-backend")]
-impl<T> From<apis::Error<T>> for ApiError {
-    fn from(err: apis::Error<T>) -> Self {
-        match err {
-            apis::Error::Ureq(e) => ApiError::Ureq(e.to_string()),
-            apis::Error::Serde(e) => ApiError::Serde(e),
-            apis::Error::Io(e) => ApiError::Io(e),
-            apis::Error::ResponseError(resp) => ApiError::ResponseError(ResponseContent {
-                status: resp.status,
-                content: String::from_utf8(resp.content).unwrap_or_else(|e| {
-                    error!(
-                        "Unable to parse response content into string: {:?}",
-                        e.as_bytes()
-                    );
-                    String::default()
-                }),
-            }),
-            apis::Error::StringParse(e) => ApiError::StringParse(e),
-            apis::Error::Multipart { field: _, error } => ApiError::Io(error),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -936,7 +908,6 @@ pub enum Error {
     MissingAttribute(CK_ATTRIBUTE_TYPE),
     ObjectClassNotSupported,
     InvalidMechanismMode(MechMode, Mechanism),
-    #[cfg(feature = "nethsm-backend")]
     Api(ApiError),
     Base64(base64ct::Error),
     StringParse(std::string::FromUtf8Error),
@@ -949,9 +920,9 @@ pub enum Error {
     InvalidDataLength,
     InvalidData,
     InvalidEncryptedDataLength,
+    NotImplemented(String),
 }
 
-#[cfg(feature = "nethsm-backend")]
 impl From<ApiError> for Error {
     fn from(err: ApiError) -> Self {
         Error::Api(err)
@@ -964,12 +935,6 @@ impl<T> From<PoisonError<T>> for Error {
     }
 }
 
-#[cfg(feature = "nethsm-backend")]
-impl<T> From<apis::Error<T>> for Error {
-    fn from(err: apis::Error<T>) -> Self {
-        Error::Api(err.into())
-    }
-}
 
 impl From<base64ct::Error> for Error {
     fn from(err: base64ct::Error) -> Self {
@@ -1006,7 +971,7 @@ impl From<Error> for CK_RV {
             Error::InvalidMechanism(_, _) => CKR_MECHANISM_INVALID,
             Error::InvalidMechanismMode(_, _) => CKR_MECHANISM_INVALID,
             Error::Base64(_) | Error::StringParse(_) => CKR_DEVICE_ERROR,
-            #[cfg(feature = "nethsm-backend")]
+            Error::NotImplemented(_) => CKR_DEVICE_ERROR,
             Error::Api(err) => match err {
                 ApiError::NoInstance => CKR_TOKEN_NOT_PRESENT,
                 ApiError::Ureq(_) => CKR_DEVICE_ERROR,
@@ -1059,7 +1024,6 @@ impl std::fmt::Display for Error {
             Error::InvalidMechanismMode(mode, mechanism) => {
                 format!("Unable to use mechanim {mechanism:?} for {mode:?}")
             }
-            #[cfg(feature = "nethsm-backend")]
             Error::Api(err) => match err {
                 ApiError::NoInstance => "No valid instance in the slot".to_string(),
                 ApiError::Ureq(err) => format!("Request error : {err}"),
@@ -1068,12 +1032,13 @@ impl std::fmt::Display for Error {
                 ApiError::ResponseError(resp) => match resp.status {
                     404 => "Key not found".to_string(),
                     401 | 403 => "Invalid credentials".to_string(),
-                    412 => "The NetHSM is not set up properly".to_string(),
+                    412 => "The backend is not set up properly".to_string(),
                     _ => format!("Api error: {resp:?}"),
                 },
                 ApiError::StringParse(err) => format!("String parse error: {err:?}"),
                 ApiError::InstanceRemoved => "Failed to connect to instance".to_string(),
             },
+            Error::NotImplemented(msg) => format!("Not implemented: {msg}"),
             Error::Base64(err) => format!("Base64 Decode error: {err:?}"),
             Error::StringParse(err) => format!("String parse error: {err:?}"),
         };

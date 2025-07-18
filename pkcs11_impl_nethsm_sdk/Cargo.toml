@@ -16,7 +16,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 # Core PKCS#11 library
-pkcs11_core = { path = "../pkcs11_core", features = ["nethsm-backend"] }
+pkcs11_core = { path = "../pkcs11_core"}
 
 # Core dependencies from workspace
 cryptoki-sys = { workspace = true }

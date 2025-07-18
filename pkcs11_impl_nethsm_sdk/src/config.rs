@@ -3,6 +3,10 @@
 //! This module provides configuration types that are specific to NetHSM
 //! and implements the BackendConfig trait from pkcs11_core.
 
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::Duration;
+
+use arc_swap::ArcSwap;
 use pkcs11_core::{
     backend::{
         error::BackendError,
@@ -10,6 +14,8 @@ use pkcs11_core::{
     },
 };
 use serde::{Deserialize, Serialize};
+
+use crate::network::{TcpConnector, RustlsConnector};
 
 /// NetHSM backend configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,6 +30,90 @@ pub struct NetHsmConfig {
     pub max_idle_connections: Option<usize>,
     /// Allow insecure certificates (for testing)
     pub danger_insecure_cert: bool,
+    /// SHA256 fingerprints for certificate validation
+    pub sha256_fingerprints: Vec<String>,
+    /// Retry configuration
+    pub retries: Option<RetryConfig>,
+    /// TCP keepalive configuration
+    pub tcp_keepalive: Option<TcpKeepaliveConfig>,
+    /// Maximum idle duration for connections
+    pub connections_max_idle_duration: Option<u64>,
+    /// User configurations
+    pub operator: Option<UserConfig>,
+    pub administrator: Option<UserConfig>,
+}
+
+/// Retry configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetryConfig {
+    /// Number of retries
+    pub count: u32,
+    /// Delay between retries in seconds
+    pub delay_seconds: u64,
+}
+
+/// TCP keepalive configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TcpKeepaliveConfig {
+    /// Keepalive time in seconds
+    pub time_seconds: u64,
+    /// Keepalive interval in seconds
+    pub interval_seconds: u64,
+    /// Number of keepalive retries
+    pub retries: u32,
+}
+
+/// User configuration for authentication
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserConfig {
+    /// Username
+    pub username: String,
+    /// Password (optional, can be set at runtime)
+    pub password: Option<String>,
+}
+
+/// NetHSM instance data for connection management
+#[derive(Debug, Clone)]
+pub struct InstanceData {
+    pub agent: Arc<ArcSwap<ureq::Agent>>,
+    pub agent_config: ureq::config::Config,
+    pub tcp_connector: TcpConnector,
+    pub rustls_connector: RustlsConnector,
+    config: nethsm_sdk_rs::apis::configuration::Configuration,
+    pub state: Arc<std::sync::RwLock<InstanceState>>,
+}
+
+/// Instance state for connection management
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum InstanceState {
+    #[default]
+    Working,
+    Failed {
+        retry_count: u8,
+        last_retry_at: std::time::Instant,
+    },
+}
+
+/// NetHSM slot configuration
+#[derive(Debug, Clone)]
+pub struct Slot {
+    pub label: String,
+    pub retries: Option<RetryConfig>,
+    pub description: Option<String>,
+    pub instances: Vec<InstanceData>,
+    pub operator: Option<UserConfig>,
+    pub administrator: Option<UserConfig>,
+    pub instance_balancer: Arc<std::sync::atomic::AtomicUsize>,
+    pub timeout_seconds: Option<u64>,
+    pub tcp_keepalive: Option<TcpKeepaliveConfig>,
+    pub connections_max_idle_duration: Option<u64>,
+}
+
+/// Device configuration containing all slots
+#[derive(Debug, Clone)]
+pub struct Device {
+    pub slots: Vec<Arc<Slot>>,
+    pub enable_set_attribute_value: bool,
 }
 
 impl NetHsmConfig {
@@ -35,6 +125,12 @@ impl NetHsmConfig {
             timeout_seconds: None,
             max_idle_connections: None,
             danger_insecure_cert: false,
+            sha256_fingerprints: Vec::new(),
+            retries: None,
+            tcp_keepalive: None,
+            connections_max_idle_duration: None,
+            operator: None,
+            administrator: None,
         }
     }
 
@@ -52,6 +148,12 @@ impl NetHsmConfig {
             timeout_seconds,
             max_idle_connections,
             danger_insecure_cert,
+            sha256_fingerprints: Vec::new(),
+            retries: None,
+            tcp_keepalive: None,
+            connections_max_idle_duration: None,
+            operator: None,
+            administrator: None,
         }
     }
 

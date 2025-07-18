@@ -1,6 +1,7 @@
 use base64ct::{Base64, Encoding};
 use cryptoki_sys::CKR_OK;
 use log::{error, trace};
+#[cfg(feature = "nethsm-backend")]
 use nethsm_sdk_rs::apis::default_api;
 
 use crate::{
@@ -227,54 +228,65 @@ pub extern "C" fn C_GenerateRandom(
 
     if ulRandomLen > 1024 {
         error!(
-            "C_GenerateRandom() called with invalid length {ulRandomLen}, NetHSM supports up to 1024 bytes"
+            "C_GenerateRandom() called with invalid length {ulRandomLen}, maximum supported is 1024 bytes"
         );
 
         return cryptoki_sys::CKR_ARGUMENTS_BAD;
     }
-    read_session!(hSession, session);
-
-    if !session
-        .login_ctx
-        .can_run_mode(crate::backend::login::UserMode::Operator)
+    
+    #[cfg(feature = "nethsm-backend")]
     {
-        error!("C_GenerateRandom() called with session not connected as operator {hSession}.");
-        return cryptoki_sys::CKR_USER_NOT_LOGGED_IN;
-    }
+        read_session!(hSession, session);
 
-    let data = match session.login_ctx.try_(
-        |api_config| {
-            default_api::random_post(
-                api_config,
-                nethsm_sdk_rs::models::RandomRequestData {
-                    length: ulRandomLen as i32,
-                },
-            )
-        },
-        crate::backend::login::UserMode::Operator,
-    ) {
-        Ok(data) => data,
-        Err(e) => {
-            error!("C_GenerateRandom() failed to generate random data: {e:?}");
-            return cryptoki_sys::CKR_FUNCTION_FAILED;
+        if !session
+            .login_ctx
+            .can_run_mode(crate::backend::login::UserMode::Operator)
+        {
+            error!("C_GenerateRandom() called with session not connected as operator {hSession}.");
+            return cryptoki_sys::CKR_USER_NOT_LOGGED_IN;
         }
-    };
 
-    // parse base64 string to bytes
+        let data = match session.login_ctx.try_(
+            |api_config| {
+                default_api::random_post(
+                    api_config,
+                    nethsm_sdk_rs::models::RandomRequestData {
+                        length: ulRandomLen as i32,
+                    },
+                )
+            },
+            crate::backend::login::UserMode::Operator,
+        ) {
+            Ok(data) => data,
+            Err(e) => {
+                error!("C_GenerateRandom() failed to generate random data: {e:?}");
+                return cryptoki_sys::CKR_FUNCTION_FAILED;
+            }
+        };
 
-    let raw_data = match Base64::decode_vec(&data.entity.random) {
-        Ok(raw_data) => raw_data,
-        Err(e) => {
-            error!("C_GenerateRandom() failed to decode random data: {e:?}");
-            return cryptoki_sys::CKR_FUNCTION_FAILED;
+        // parse base64 string to bytes
+
+        let raw_data = match Base64::decode_vec(&data.entity.random) {
+            Ok(raw_data) => raw_data,
+            Err(e) => {
+                error!("C_GenerateRandom() failed to decode random data: {e:?}");
+                return cryptoki_sys::CKR_FUNCTION_FAILED;
+            }
+        };
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(raw_data.as_ptr(), RandomData, ulRandomLen as usize);
         }
-    };
 
-    unsafe {
-        std::ptr::copy_nonoverlapping(raw_data.as_ptr(), RandomData, ulRandomLen as usize);
+        CKR_OK
     }
-
-    CKR_OK
+    
+    #[cfg(not(feature = "nethsm-backend"))]
+    {
+        // For non-NetHSM backends, delegate to the backend registry
+        error!("C_GenerateRandom() called but no backend implementation available");
+        cryptoki_sys::CKR_FUNCTION_NOT_SUPPORTED
+    }
 }
 
 #[cfg(test)]

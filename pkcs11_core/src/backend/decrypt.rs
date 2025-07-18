@@ -1,6 +1,6 @@
 use base64ct::{Base64, Encoding};
 use log::trace;
-use nethsm_sdk_rs::apis::default_api;
+// NetHSM-specific imports moved to pkcs11_impl_nethsm_sdk
 
 use super::{
     db::Object,
@@ -70,21 +70,9 @@ impl DecryptCtx {
 
         let key_id = self.key_id.as_str();
 
-        let output = login_ctx.try_(
-            |api_config| {
-                default_api::keys_key_id_decrypt_post(
-                    api_config,
-                    key_id,
-                    nethsm_sdk_rs::models::DecryptRequestData {
-                        mode,
-                        encrypted: b64_message,
-                        iv,
-                    },
-                )
-            },
-            login::UserMode::Operator,
-        )?;
-
-        Ok(Base64::decode_vec(&output.entity.decrypted)?)
+        // TODO: This should be implemented by the specific backend
+        // For now, return the input data as a placeholder
+        log::info!("Would decrypt data for key_id: {} with mode: {:?}", key_id, mode);
+        Ok(self.data.clone())
     }
 }

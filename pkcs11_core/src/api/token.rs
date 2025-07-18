@@ -211,13 +211,13 @@ pub extern "C" fn C_GetTokenInfo(
     let mut flags = CKF_TOKEN_INITIALIZED | CKF_USER_PIN_INITIALIZED | CKF_RNG;
 
     // if the slot has no password, set the login required flag
-    if !slot.is_connected() {
+    if !slot.available {
         flags |= cryptoki_sys::CKF_LOGIN_REQUIRED;
         debug!("Login required");
     }
 
     let token_info = CK_TOKEN_INFO {
-        label: padded_str(&slot.label),
+        label: padded_str(&slot.info.slot_description),
         manufacturerID: padded_str(&info.vendor),
         model: padded_str(&info.product),
         serialNumber: padded_str(&serial_number),

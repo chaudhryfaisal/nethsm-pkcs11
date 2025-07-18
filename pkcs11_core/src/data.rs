@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::sync::{atomic::AtomicBool, Mutex, RwLock};
 
-use crate::backend::{events::EventsManager, SyncBackendWrapper};
+use crate::backend::{events::EventsManager, SyncBackendWrapper, Device};
 
-use crate::{api, backend::session::SessionManager, config::device::Device};
+use crate::{api, backend::session::SessionManager};
 use arc_swap::ArcSwapOption;
 use cryptoki_sys::{CK_FUNCTION_LIST, CK_SLOT_ID, CK_VERSION};
 use lazy_static::lazy_static;
